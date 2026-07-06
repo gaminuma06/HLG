@@ -4536,7 +4536,7 @@ function App() {
                       {/* Botón Encender/Apagar Coloreado por Pluviómetro */}
                       <div className="filter-group" style={{ minWidth: '160px', margin: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
                         <label style={{ fontSize: '0.75rem', marginBottom: '0.2rem', opacity: 0.8, display: 'flex', alignItems: 'center' }}>
-                          <Palette size={11} style={{ marginRight: '4px' }} /> Colorear Zonas
+                          <Palette size={11} style={{ marginRight: '4px' }} /> Pluviometría
                         </label>
                         <button
                           type="button"
@@ -4573,14 +4573,14 @@ function App() {
                             boxShadow: showPluvZones ? '0 0 8px #00f2fe' : 'none',
                             transition: 'all 0.25s ease'
                           }}></span>
-                          {showPluvZones ? 'Zonas Activas' : 'Zonas Inactivas'}
+                          {showPluvZones ? 'Desactivar' : 'Activar'}
                         </button>
                       </div>
 
                       {/* Botón Encendido/Apagado/Fertilización 3 posiciones para Humedad */}
                       <div className="filter-group" style={{ minWidth: '180px', margin: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
                         <label style={{ fontSize: '0.75rem', marginBottom: '0.2rem', opacity: 0.8, display: 'flex', alignItems: 'center' }}>
-                          <Layers size={11} style={{ marginRight: '4px' }} /> Visualización HUM
+                          <Layers size={11} style={{ marginRight: '4px' }} /> Humedad / Fertilización
                         </label>
                         <button
                           type="button"
@@ -4636,11 +4636,7 @@ function App() {
                               : 'none',
                             transition: 'all 0.25s ease'
                           }}></span>
-                          {humDisplayMode === 'moisture' 
-                            ? 'HUM: Humedad' 
-                            : humDisplayMode === 'fertility' 
-                            ? 'HUM: Fertilización' 
-                            : 'HUM: Apagado'}
+                          {humDisplayMode !== 'off' ? 'Desactivar' : 'Activar'}
                         </button>
                       </div>
 
