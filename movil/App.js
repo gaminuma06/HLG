@@ -76,6 +76,7 @@ export default function App() {
   const [pendingFormsCount, setPendingFormsCount] = useState(0);
   const [pendingGpsCount, setPendingGpsCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
+  const [toastMessage, setToastMessage] = useState(null);
 
   // Inicialización de Estados al Abrir la App
   useEffect(() => {
@@ -113,6 +114,14 @@ export default function App() {
     } catch (e) {
       console.error("Error al actualizar estadísticas locales:", e);
     }
+  };
+
+  // Mostrar mensaje Toast autodescartable
+  const triggerToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 2000);
   };
 
   // Manejar Login
@@ -210,7 +219,23 @@ export default function App() {
         await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
       }
       setIsTracking(false);
-      Alert.alert("Rastreo Detenido", "El rastreo de ubicación ha finalizado por hoy.");
+
+      // Limpiar absolutamente todos los campos del formulario
+      setFinca('01');
+      setSubsector('');
+      setLote('');
+      setLinea('');
+      setPalma('');
+      setObservacion('');
+
+      // Apagar todos los candados de fijado (pines)
+      setPinFinca(false);
+      setPinSubsector(false);
+      setPinLote(false);
+      setPinLinea(false);
+      setPinPalma(false);
+
+      Alert.alert("Trabajo Finalizado", "El rastreo GPS se ha detenido y se han limpiado todos los campos del formulario.");
     } catch (e) {
       console.error("Error al detener el rastreo GPS:", e);
     }
@@ -224,17 +249,19 @@ export default function App() {
     }
 
     try {
-      // Capturar coordenada GPS actual en primer plano para georreferenciar la lectura
+      // Capturar coordenada GPS actual de manera instantánea (última conocida por el dispositivo)
       let currentCoords = null;
       try {
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        currentCoords = {
-          lat: loc.coords.latitude,
-          lon: loc.coords.longitude,
-          timestamp: loc.timestamp
-        };
+        const loc = await Location.getLastKnownPositionAsync();
+        if (loc) {
+          currentCoords = {
+            lat: loc.coords.latitude,
+            lon: loc.coords.longitude,
+            timestamp: loc.timestamp
+          };
+        }
       } catch (gpsErr) {
-        console.warn("No se pudo obtener la posición GPS actual:", gpsErr);
+        console.warn("No se pudo obtener la última posición GPS conocida:", gpsErr);
       }
 
       // Crear nuevo registro de formulario
@@ -266,7 +293,8 @@ export default function App() {
       if (!pinPalma) setPalma('');
       setObservacion(''); // Observación nunca se fija
 
-      Alert.alert("Registro Guardado", "La lectura se ha almacenado localmente con éxito.");
+      // Feedback visual inmediato no bloqueante (Toast)
+      triggerToast("✓ Registro guardado localmente");
       updateLocalStats();
     } catch (e) {
       console.error("Error al guardar el formulario:", e);
@@ -410,6 +438,12 @@ export default function App() {
   return (
     <View style={styles.mainContainer}>
       <StatusBar style="light" />
+      
+      {toastMessage && (
+        <View style={styles.toastContainer}>
+          <Text style={styles.toastText}>{toastMessage}</Text>
+        </View>
+      )}
       
       {/* Cabecera */}
       <View style={styles.header}>
@@ -922,5 +956,28 @@ const styles = StyleSheet.create({
   navTabTextActive: {
     color: '#00f2fe',
     fontWeight: 'bold',
+  },
+  toastContainer: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 100 : 80,
+    left: 20,
+    right: 20,
+    backgroundColor: '#00e676',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    zIndex: 9999,
+    alignItems: 'center',
+    shadowColor: '#00e676',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  toastText: {
+    color: '#051829',
+    fontSize: 14,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
 });
