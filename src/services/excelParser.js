@@ -44,8 +44,14 @@ export function parseHistoricalExcel(file) {
           
           // Valores por defecto y casteo
           const semana = parseInt(normRow['semana'] || 0, 10);
-          const finca = String(normRow['finca'] || '').trim().padStart(2, '0'); // Formato '01', '02', etc.
+          let finca = String(normRow['finca'] || '').trim().padStart(2, '0'); // Formato '01', '02', etc.
           const pluviometro = String(normRow['pluviometro'] || '').trim();
+          
+          // Corrección: El Rodeo pertenece a la Finca 3 (TUC - "03")
+          const pluvLower = pluviometro.toLowerCase();
+          if (pluvLower === 'el rodeo' || pluvLower === 'rodeo') {
+            finca = '03';
+          }
           const anio = parseInt(normRow['ano'] || normRow['anio'] || 0, 10);
           const mesDesc = String(normRow['mes_desc'] || normRow['mesdesc'] || '').trim();
           const dia = parseInt(normRow['dia'] || 0, 10);
@@ -146,5 +152,48 @@ export function calculateWaterBalance(records, etReferencial = 3.5, capacidadSue
       escurrimiento,
       deficit
     };
+  });
+}
+
+/**
+ * Lee un archivo Excel de suelos y devuelve una lista de registros con claves normalizadas.
+ * @param {File} file - El archivo Excel subido.
+ * @returns {Promise<Array<Object>>}
+ */
+export function parseSoilsExcel(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        
+        const rawJson = XLSX.utils.sheet_to_json(worksheet);
+        
+        const processedRecords = rawJson.map((row, index) => {
+          const normRow = normalizeKeys(row);
+          
+          // Generamos un id determinístico o único
+          return {
+            id: `soil-row-${index}-${Date.now()}`,
+            ...normRow
+          };
+        });
+
+        resolve(processedRecords);
+      } catch (error) {
+        reject(new Error("Error al procesar el archivo de suelos Excel: " + error.message));
+      }
+    };
+
+    reader.onerror = () => {
+      reject(new Error("Error al leer el archivo de suelos."));
+    };
+
+    reader.readAsArrayBuffer(file);
   });
 }

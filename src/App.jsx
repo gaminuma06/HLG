@@ -28,9 +28,9 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import 'leaflet/dist/leaflet.css';
-import { parseHistoricalExcel, calculateWaterBalance } from './services/excelParser';
-import { saveHistoricalRecords, loadHistoricalRecords, clearHistoricalRecords, getLocalMap, saveLocalMap } from './services/dbStore';
-import { uploadRecords, downloadRecords, uploadMap, downloadMaps } from './services/firebaseService';
+import { parseHistoricalExcel, calculateWaterBalance, parseSoilsExcel } from './services/excelParser';
+import { saveHistoricalRecords, loadHistoricalRecords, clearHistoricalRecords, getLocalMap, saveLocalMap, saveSoilRecords, loadSoilRecords, clearSoilRecords } from './services/dbStore';
+import { uploadRecords, downloadRecords, uploadMap, downloadMaps, uploadSoilRecords, downloadSoilRecords } from './services/firebaseService';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, LineController, BarController, Filler } from 'chart.js';
 import L from 'leaflet';
 import { Chart } from 'react-chartjs-2';
@@ -513,6 +513,12 @@ function App() {
           if (r.pluviometro !== expectedPluv) {
             updated = { ...updated, pluviometro: expectedPluv };
           }
+          const pluvLower = expectedPluv.toLowerCase();
+          if (pluvLower === 'el rodeo' || pluvLower === 'rodeo') {
+            if (updated.finca !== '03') {
+              updated = { ...updated, finca: '03' };
+            }
+          }
         }
         return updated;
       }
@@ -582,6 +588,11 @@ function App() {
   const [mapUploadFinca, setMapUploadFinca] = useState('HLG');
   const [mapUploadStatus, setMapUploadStatus] = useState('idle'); // 'idle', 'uploading', 'success', 'error'
   const [mapUploadError, setMapUploadError] = useState(null);
+  const [soils, setSoils] = useState([]);
+  const [soilUploadStatus, setSoilUploadStatus] = useState('idle'); // 'idle', 'uploading', 'success', 'error'
+  const [soilErrorMessage, setSoilErrorMessage] = useState(null);
+  const [soilSyncProgress, setSoilSyncProgress] = useState(0);
+  const [soilSyncTotal, setSoilSyncTotal] = useState(0);
 
   const activeFincaKey = selectedMapFinca === 'Todas' ? 'HLG' : (FINCA_MAPS_KEYS[selectedMapFinca] || selectedMapFinca);
   const activeMapGeoJSON = fincaMaps[activeFincaKey];
@@ -1381,6 +1392,15 @@ function App() {
     }
 
     try {
+      const localSoils = await loadSoilRecords();
+      if (localSoils && localSoils.length > 0) {
+        setSoils(localSoils);
+      }
+    } catch (soilsDbErr) {
+      console.error("Error al leer IndexedDB de suelos inicial:", soilsDbErr);
+    }
+
+    try {
       const HLG_map = await getLocalMap('HLG');
       const HSL_map = await getLocalMap('HSL');
       const TUC_map = await getLocalMap('TUC');
@@ -1427,6 +1447,16 @@ function App() {
       }
     } catch (firebaseMapErr) {
       console.warn("Fallo al revalidar mapas con Firebase Cloud (offline):", firebaseMapErr);
+    }
+
+    try {
+      const cloudSoils = await downloadSoilRecords();
+      if (cloudSoils && cloudSoils.length > 0) {
+        await saveSoilRecords(cloudSoils);
+        setSoils(cloudSoils);
+      }
+    } catch (firebaseSoilsErr) {
+      console.warn("Fallo al revalidar suelos con Firebase Cloud (offline):", firebaseSoilsErr);
     } finally {
       setLoading(false);
       setLoadingSource('');
@@ -1511,26 +1541,28 @@ function App() {
         throw new Error("No se encontraron registros válidos en el archivo. Verifica las columnas.");
       }
 
-      // Obtener fincas únicas en la carga actual
-      const uploadedFincas = [...new Set(parsedData.map(r => r.finca))];
-      
-      // Filtrar los registros existentes conservando las fincas que NO están en la carga actual
-      const existingFiltered = records.filter(r => !uploadedFincas.includes(r.finca));
-      
+      // Evitar duplicación de datos (filtrar por finca, pluviometro y fecha)
+      const existingKeys = new Set(records.map(r => `${r.finca}|${r.pluviometro}|${r.data}`));
+      const onlyNewRecords = parsedData.filter(r => !existingKeys.has(`${r.finca}|${r.pluviometro}|${r.data}`));
+
+      if (onlyNewRecords.length === 0) {
+        throw new Error("No se encontraron registros nuevos en el archivo Excel (todos los datos ya están registrados).");
+      }
+
       // Combinar para formar la base consolidada local
-      const combinedData = [...existingFiltered, ...parsedData];
+      const combinedData = [...records, ...onlyNewRecords];
 
       // 2. Guardar en IndexedDB local
       setLoadingSource('Guardando en base local...');
       await saveHistoricalRecords(combinedData);
       setRecords(combinedData);
 
-      // 3. Sincronizar automáticamente a Firebase Realtime Database (limpiando primero la nube)
+      // 3. Sincronizar automáticamente a Firebase Realtime Database (solo los registros nuevos)
       setSyncStatus('uploading');
       setSyncProgress(0);
-      setSyncTotal(combinedData.length);
+      setSyncTotal(onlyNewRecords.length);
       
-      await uploadRecords(combinedData, (processed) => {
+      await uploadRecords(onlyNewRecords, (processed) => {
         setSyncProgress(processed);
       });
       
@@ -1605,6 +1637,65 @@ function App() {
     };
 
     reader.readAsText(file);
+  };
+
+  // Manejar subida de archivo Excel de Suelos
+  const handleSoilExcelUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setLoading(true);
+    setSoilUploadStatus('idle');
+    setSoilErrorMessage(null);
+
+    try {
+      setLoadingSource('Procesando archivo de suelos...');
+      const parsedSoils = await parseSoilsExcel(file);
+      if (parsedSoils.length === 0) {
+        throw new Error("No se encontraron registros de suelos válidos en el archivo Excel.");
+      }
+
+      setLoadingSource('Guardando suelos localmente...');
+      await saveSoilRecords(parsedSoils);
+      setSoils(parsedSoils);
+
+      // Sincronizar con Firebase Realtime Database
+      setSoilUploadStatus('uploading');
+      setSoilSyncProgress(0);
+      setSoilSyncTotal(parsedSoils.length);
+
+      await uploadSoilRecords(parsedSoils, (processed) => {
+        setSoilSyncProgress(processed);
+      });
+
+      setSoilUploadStatus('success');
+
+      setTimeout(() => {
+        setSoilUploadStatus('idle');
+      }, 2000);
+
+    } catch (err) {
+      setSoilUploadStatus('error');
+      setSoilErrorMessage(err.message);
+    } finally {
+      setLoading(false);
+      setLoadingSource('');
+    }
+  };
+
+  // Limpiar datos de suelos
+  const handleClearSoils = async () => {
+    if (window.confirm("¿Estás seguro de que deseas eliminar toda la información de suelos localmente?")) {
+      setLoading(true);
+      try {
+        await clearSoilRecords();
+        setSoils([]);
+      } catch (err) {
+        alert("Error al limpiar datos de suelos: " + err.message);
+      } finally {
+        setLoading(false);
+      }
+    }
   };
 
   // Limpiar datos en ambas bases (Local y Firebase Cloud)
@@ -6811,6 +6902,89 @@ function App() {
                     <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>{mapUploadError}</p>
                   </div>
                 )}
+              </div>
+
+              {/* Cargar Información de Suelos (Excel) */}
+              <div className="modal-section" style={{ borderTop: '1px solid var(--border-light)', paddingTop: '1.5rem', marginTop: '1.5rem' }}>
+                <h4>Cargar Información de Suelos (Excel)</h4>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+                  Sube el archivo Excel que contiene el tipo de suelo de los lotes. Estos datos se almacenarán localmente y se sincronizarán con Firebase Cloud para calcular capacidades específicas.
+                </p>
+
+                {soilUploadStatus === 'uploading' ? (
+                  <div className="glass-panel" style={{ padding: '1.5rem 1rem', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '0.75rem', background: 'rgba(255, 255, 255, 0.01)' }}>
+                    <RefreshCw className="text-accent animate-spin" size={24} style={{ margin: '0 auto' }} />
+                    <div style={{ fontSize: '0.85rem' }}>Sincronizando suelos en la nube...</div>
+                    <div style={{ width: '100%', maxWidth: '300px', margin: '0 auto' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginBottom: '0.2rem', color: 'var(--text-muted)' }}>
+                        <span>Subiendo...</span>
+                        <span>{soilSyncProgress} / {soilSyncTotal} ({Math.round((soilSyncProgress/soilSyncTotal)*100)}%)</span>
+                      </div>
+                      <div style={{ width: '100%', height: '4px', background: 'var(--bg-input)', borderRadius: '2px', overflow: 'hidden' }}>
+                        <div style={{ width: `${(soilSyncProgress/soilSyncTotal)*100}%`, height: '100%', background: 'linear-gradient(90deg, var(--primary), var(--accent))' }}></div>
+                      </div>
+                    </div>
+                  </div>
+                ) : soilUploadStatus === 'success' ? (
+                  <div className="glass-panel" style={{ padding: '1.5rem 1rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', borderColor: 'var(--success)', background: 'var(--success-glow)' }}>
+                    <CheckCircle2 className="text-success" size={28} />
+                    <h5 style={{ fontWeight: 700, fontSize: '0.9rem' }}>¡Suelos Cargados con Éxito!</h5>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                      Se importaron {soilSyncTotal} registros correctamente.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="file-upload-zone" onClick={() => document.getElementById('soils-file-modal-input').click()} style={{ padding: '1.5rem 1rem', borderStyle: 'dashed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', height: 'auto' }}>
+                    <input 
+                      type="file" 
+                      id="soils-file-modal-input" 
+                      style={{ display: 'none' }} 
+                      accept=".xlsx, .xls"
+                      onChange={handleSoilExcelUpload}
+                    />
+                    <Database size={18} className="text-accent" />
+                    <div>
+                      <p style={{ fontWeight: 600, fontSize: '0.85rem', margin: 0 }}>Haz clic para seleccionar el Excel de suelos</p>
+                      <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>Formatos: .xlsx, .xls</p>
+                    </div>
+                  </div>
+                )}
+
+                {soilErrorMessage && (
+                  <div className="glass-panel" style={{ padding: '0.75rem 1rem', borderColor: 'var(--danger)', background: 'var(--danger-glow)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
+                    <AlertTriangle className="text-danger" size={16} style={{ flexShrink: 0 }} />
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>{soilErrorMessage}</p>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.75rem', background: 'rgba(255,255,255,0.01)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    Registros de suelo cargados: <strong>{soils.length.toLocaleString('es-ES')}</strong>
+                  </div>
+                  {soils.length > 0 && (
+                    <button 
+                      onClick={handleClearSoils}
+                      style={{ 
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--danger)',
+                        fontSize: '0.7rem',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        transition: 'background 0.2s',
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 75, 75, 0.08)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <Trash2 size={12} />
+                      Borrar suelos local
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Parámetros de Suelo y Consumo de Cultivo */}

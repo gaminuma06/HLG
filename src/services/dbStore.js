@@ -1,7 +1,8 @@
 const DB_NAME = 'GHLG_Balance_DB';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_NAME = 'records';
 const MAPS_STORE_NAME = 'maps';
+const SOILS_STORE_NAME = 'soils';
 
 /**
  * Inicializa la base de datos IndexedDB.
@@ -18,6 +19,9 @@ export function initDB() {
       }
       if (!db.objectStoreNames.contains(MAPS_STORE_NAME)) {
         db.createObjectStore(MAPS_STORE_NAME, { keyPath: 'fincaId' });
+      }
+      if (!db.objectStoreNames.contains(SOILS_STORE_NAME)) {
+        db.createObjectStore(SOILS_STORE_NAME, { keyPath: 'id' });
       }
     };
 
@@ -183,6 +187,92 @@ export function clearLocalMaps() {
 
       request.onerror = (e) => {
         reject(new Error("Error al limpiar mapas locales: " + e.target.error.message));
+      };
+    });
+  });
+}
+
+/**
+ * Guarda todos los registros de suelos en IndexedDB.
+ * @param {Array<Object>} records - Lista de registros de suelo.
+ * @returns {Promise<void>}
+ */
+export function saveSoilRecords(records) {
+  return initDB().then((db) => {
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([SOILS_STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(SOILS_STORE_NAME);
+
+      const clearRequest = store.clear();
+
+      clearRequest.onsuccess = () => {
+        let index = 0;
+        
+        function putNext() {
+          if (index < records.length) {
+            const req = store.add(records[index]);
+            req.onsuccess = () => {
+              index++;
+              putNext();
+            };
+            req.onerror = (err) => {
+              transaction.abort();
+              reject(new Error("Error al insertar registro de suelo en índice " + index + ": " + err.target.error.message));
+            };
+          } else {
+            resolve();
+          }
+        }
+        
+        putNext();
+      };
+
+      clearRequest.onerror = (err) => {
+        reject(new Error("Error al limpiar IndexedDB de suelos: " + err.target.error.message));
+      };
+    });
+  });
+}
+
+/**
+ * Carga todos los registros de suelos guardados en IndexedDB.
+ * @returns {Promise<Array<Object>>}
+ */
+export function loadSoilRecords() {
+  return initDB().then((db) => {
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([SOILS_STORE_NAME], 'readonly');
+      const store = transaction.objectStore(SOILS_STORE_NAME);
+      const request = store.getAll();
+
+      request.onsuccess = (e) => {
+        resolve(e.target.result || []);
+      };
+
+      request.onerror = (e) => {
+        reject(new Error("Error al leer datos de suelos de IndexedDB: " + e.target.error.message));
+      };
+    });
+  });
+}
+
+/**
+ * Elimina todos los registros de suelos de IndexedDB.
+ * @returns {Promise<void>}
+ */
+export function clearSoilRecords() {
+  return initDB().then((db) => {
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([SOILS_STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(SOILS_STORE_NAME);
+      const request = store.clear();
+
+      request.onsuccess = () => {
+        resolve();
+      };
+
+      request.onerror = (e) => {
+        reject(new Error("Error al vaciar almacén de suelos de IndexedDB: " + e.target.error.message));
       };
     });
   });

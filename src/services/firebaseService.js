@@ -109,3 +109,56 @@ export async function downloadMaps() {
     throw new Error("Error al descargar mapas desde Firebase: " + error.message);
   }
 }
+
+/**
+ * Sube registros de suelos en lotes a Firebase Realtime Database.
+ * @param {Array<Object>} records - Listado de registros de suelos.
+ * @param {Function} onProgress - Callback para reportar el avance.
+ * @returns {Promise<void>}
+ */
+export async function uploadSoilRecords(records, onProgress) {
+  const dbRef = ref(rtdb);
+  const total = records.length;
+  const chunkSize = 500; // Un lote más pequeño para suelos es adecuado
+  let processed = 0;
+
+  for (let i = 0; i < total; i += chunkSize) {
+    const chunk = records.slice(i, i + chunkSize);
+    const updates = {};
+
+    chunk.forEach(record => {
+      // Sube todo el objeto del suelo tal como venga parseado
+      updates[`/suelos/${record.id}`] = record;
+    });
+
+    try {
+      await update(dbRef, updates);
+      processed += chunk.length;
+      if (onProgress) {
+        onProgress(processed, total);
+      }
+    } catch (error) {
+      throw new Error(`Error subiendo lote de suelos desde registro ${i}: ` + error.message);
+    }
+  }
+}
+
+/**
+ * Descarga todos los registros de suelos almacenados en Firebase Realtime Database.
+ * @returns {Promise<Array<Object>>} Listado de registros de suelo.
+ */
+export async function downloadSoilRecords() {
+  const dbRef = ref(rtdb);
+  try {
+    const snapshot = await get(child(dbRef, 'suelos'));
+    if (snapshot.exists()) {
+      const val = snapshot.val();
+      if (val) {
+        return Object.values(val);
+      }
+    }
+    return [];
+  } catch (error) {
+    throw new Error("Error al descargar suelos desde Firebase: " + error.message);
+  }
+}
