@@ -13,6 +13,7 @@
   
   --bg-app: hsl(var(--hue-primary), 25%, 3%);
   --bg-panel: hsla(var(--hue-primary), 25%, 6%, 0.7);
+  --bg-card: hsl(var(--hue-primary), 25%, 7%);
   --bg-input: hsl(var(--hue-primary), 20%, 8%);
   
   --border-light: hsla(0, 0%, 100%, 0.08);
