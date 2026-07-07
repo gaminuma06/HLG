@@ -162,3 +162,21 @@ export async function downloadSoilRecords() {
     throw new Error("Error al descargar suelos desde Firebase: " + error.message);
   }
 }
+
+/**
+ * Obtiene las credenciales de acceso de administrador desde Firebase Realtime Database.
+ * @returns {Promise<Object|null>}
+ */
+export async function getAdminCredentials() {
+  const dbRef = ref(rtdb);
+  try {
+    const snapshot = await get(child(dbRef, 'admin_auth'));
+    if (snapshot.exists()) {
+      return snapshot.val();
+    }
+    return null;
+  } catch (error) {
+    console.error("Error al descargar credenciales de administrador:", error);
+    return null;
+  }
+}

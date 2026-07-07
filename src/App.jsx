@@ -30,7 +30,7 @@ import * as XLSX from 'xlsx';
 import 'leaflet/dist/leaflet.css';
 import { parseHistoricalExcel, calculateWaterBalance, parseSoilsExcel } from './services/excelParser';
 import { saveHistoricalRecords, loadHistoricalRecords, clearHistoricalRecords, getLocalMap, saveLocalMap, saveSoilRecords, loadSoilRecords, clearSoilRecords } from './services/dbStore';
-import { uploadRecords, downloadRecords, uploadMap, downloadMaps, uploadSoilRecords, downloadSoilRecords } from './services/firebaseService';
+import { uploadRecords, downloadRecords, uploadMap, downloadMaps, uploadSoilRecords, downloadSoilRecords, getAdminCredentials } from './services/firebaseService';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, LineController, BarController, Filler } from 'chart.js';
 import L from 'leaflet';
 import { Chart } from 'react-chartjs-2';
@@ -593,6 +593,14 @@ function App() {
   const [soilErrorMessage, setSoilErrorMessage] = useState(null);
   const [soilSyncProgress, setSoilSyncProgress] = useState(0);
   const [soilSyncTotal, setSoilSyncTotal] = useState(0);
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(() => {
+    return sessionStorage.getItem('isAdminLoggedIn') === 'true';
+  });
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [loginUser, setLoginUser] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const activeFincaKey = selectedMapFinca === 'Todas' ? 'HLG' : (FINCA_MAPS_KEYS[selectedMapFinca] || selectedMapFinca);
   const activeMapGeoJSON = fincaMaps[activeFincaKey];
@@ -1713,6 +1721,58 @@ function App() {
       } finally {
         setLoading(false);
       }
+    }
+  };
+
+  // Manejar autenticación de Administrador
+  const handleAdminLogin = async (e) => {
+    e.preventDefault();
+    setIsLoggingIn(true);
+    setLoginError(null);
+
+    try {
+      const fbCreds = await getAdminCredentials();
+      
+      const expectedUser = fbCreds?.username || 'admin';
+      const expectedPassword = fbCreds?.password || 'Ghlg2026!';
+
+      if (loginUser === expectedUser && loginPassword === expectedPassword) {
+        setIsAdminLoggedIn(true);
+        sessionStorage.setItem('isAdminLoggedIn', 'true');
+        setShowLoginModal(false);
+        setSettingsOpen(true);
+        setLoginUser('');
+        setLoginPassword('');
+      } else {
+        setLoginError("Usuario o contraseña incorrectos.");
+      }
+    } catch (err) {
+      console.error("Error en login:", err);
+      // Fallback local en caso de error de conexión
+      if (loginUser === 'admin' && loginPassword === 'Ghlg2026!') {
+        setIsAdminLoggedIn(true);
+        sessionStorage.setItem('isAdminLoggedIn', 'true');
+        setShowLoginModal(false);
+        setSettingsOpen(true);
+        setLoginUser('');
+        setLoginPassword('');
+      } else {
+        setLoginError("Error de conexión. Intenta de nuevo.");
+      }
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  // Abrir panel de configuración (o pedir login si no está autenticado)
+  const handleOpenSettings = () => {
+    if (isAdminLoggedIn) {
+      setSettingsOpen(true);
+    } else {
+      setLoginError(null);
+      setLoginUser('');
+      setLoginPassword('');
+      setShowLoginModal(true);
     }
   };
 
@@ -3578,7 +3638,7 @@ function App() {
             </span>
             <button 
               className="settings-btn" 
-              onClick={() => setSettingsOpen(true)}
+              onClick={handleOpenSettings}
               title="Configuración y Carga de Lluvias"
             >
               <Settings size={20} />
@@ -3629,7 +3689,7 @@ function App() {
             <p style={{ color: 'var(--text-muted)', maxWidth: '500px' }}>
               Para comenzar a visualizar el balance hídrico, abre el panel de configuración desde el botón <Settings size={14} style={{ display: 'inline', verticalAlign: 'middle' }} /> en la esquina superior derecha y sube tu archivo Excel.
             </p>
-            <button className="btn" onClick={() => setSettingsOpen(true)}>
+            <button className="btn" onClick={handleOpenSettings}>
               <Upload size={18} />
               Abrir Configuración y Carga
             </button>
@@ -4466,7 +4526,7 @@ function App() {
                     </p>
                     <button 
                       className="btn btn-primary"
-                      onClick={() => setSettingsOpen(true)}
+                      onClick={handleOpenSettings}
                       style={{ marginTop: '0.5rem' }}
                     >
                       <Upload size={16} />
@@ -7158,6 +7218,82 @@ function App() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Login de Administrador */}
+      {showLoginModal && (
+        <div className="modal-overlay" onClick={() => setShowLoginModal(false)}>
+          <div className="modal-content glass-panel" style={{ maxWidth: '400px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Acceso de Administrador</h3>
+              <button className="modal-close-btn" onClick={() => setShowLoginModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleAdminLogin} className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>
+                Esta sección requiere credenciales de administrador para realizar modificaciones o subir archivos.
+              </p>
+
+              <div className="filter-group" style={{ margin: 0 }}>
+                <label htmlFor="login-user" style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Usuario</label>
+                <input 
+                  id="login-user"
+                  type="text"
+                  required
+                  className="select-control"
+                  value={loginUser}
+                  onChange={(e) => setLoginUser(e.target.value)}
+                  style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem', width: '100%' }}
+                  placeholder="Introduce tu usuario"
+                />
+              </div>
+
+              <div className="filter-group" style={{ margin: 0 }}>
+                <label htmlFor="login-pass" style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Contraseña</label>
+                <input 
+                  id="login-pass"
+                  type="password"
+                  required
+                  className="select-control"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem', width: '100%' }}
+                  placeholder="Introduce tu contraseña"
+                />
+              </div>
+
+              {loginError && (
+                <div className="glass-panel" style={{ padding: '0.75rem 1rem', borderColor: 'var(--danger)', background: 'var(--danger-glow)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <AlertTriangle className="text-danger" size={16} style={{ flexShrink: 0 }} />
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>{loginError}</p>
+                </div>
+              )}
+
+              <button 
+                type="submit" 
+                className="btn btn-primary" 
+                disabled={isLoggingIn}
+                style={{ 
+                  width: '100%', 
+                  justifyContent: 'center', 
+                  padding: '0.6rem',
+                  fontSize: '0.9rem',
+                  marginTop: '0.5rem'
+                }}
+              >
+                {isLoggingIn ? (
+                  <>
+                    <RefreshCw className="animate-spin" size={16} style={{ marginRight: '8px' }} />
+                    Iniciando sesión...
+                  </>
+                ) : (
+                  'Ingresar'
+                )}
+              </button>
+            </form>
           </div>
         </div>
       )}
