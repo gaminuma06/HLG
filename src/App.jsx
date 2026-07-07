@@ -1734,7 +1734,7 @@ function App() {
       const fbCreds = await getAdminCredentials();
       
       const expectedUser = fbCreds?.username || 'admin';
-      const expectedPassword = fbCreds?.password || 'Ghlg2026!';
+      const expectedPassword = fbCreds?.password || 'hlg2026#';
 
       if (loginUser === expectedUser && loginPassword === expectedPassword) {
         setIsAdminLoggedIn(true);
@@ -1749,7 +1749,7 @@ function App() {
     } catch (err) {
       console.error("Error en login:", err);
       // Fallback local en caso de error de conexión
-      if (loginUser === 'admin' && loginPassword === 'Ghlg2026!') {
+      if (loginUser === 'admin' && loginPassword === 'hlg2026#') {
         setIsAdminLoggedIn(true);
         sessionStorage.setItem('isAdminLoggedIn', 'true');
         setShowLoginModal(false);
