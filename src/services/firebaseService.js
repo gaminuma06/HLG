@@ -1,4 +1,9 @@
-import { rtdb } from '../firebaseConfig';
+import { rtdb, storage } from '../firebaseConfig';
+import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+
+// Configurar límite de tiempo para reintentos de subida (evita quedarse colgado por horas)
+storage.maxUploadRetryTime = 4000; // 4 segundos
+storage.maxDownloadRetryTime = 4000; // 4 segundos
 import { ref, update, get, child, set } from 'firebase/database';
 
 /**
@@ -56,8 +61,10 @@ export async function downloadRecords() {
     if (snapshot.exists()) {
       const val = snapshot.val();
       if (val) {
-        // Firebase puede retornar un objeto o un array indexado si los ids tienen patrones específicos
-        return Object.values(val);
+        // Filtrar únicamente los registros históricos válidos (cuyo id comience con 'row-')
+        // Esto evita que nodos administrativos como 'campo_recorridos', 'lecturas_campo' o 'usuarios'
+        // ingresen al flujo de IndexedDB y causen un error de clave primaria faltante.
+        return Object.values(val).filter(item => item && item.id && String(item.id).startsWith('row-'));
       }
     }
     return [];
@@ -178,5 +185,108 @@ export async function getAdminCredentials() {
   } catch (error) {
     console.error("Error al descargar credenciales de administrador:", error);
     return null;
+  }
+}
+
+/**
+ * Descarga todos los recorridos GPS registrados desde la app móvil.
+ * @returns {Promise<Array<Object>>} Listado de recorridos.
+ */
+export async function downloadMobileTracks() {
+  const dbRef = ref(rtdb);
+  try {
+    const snapshot = await get(child(dbRef, 'registros/campo_recorridos'));
+    if (snapshot.exists()) {
+      const val = snapshot.val();
+      if (val) {
+        return Object.values(val);
+      }
+    }
+    return [];
+  } catch (error) {
+    throw new Error("Error al descargar recorridos GPS desde Firebase: " + error.message);
+  }
+}
+
+/**
+ * Descarga todas las lecturas de campo (formularios) registradas desde la app móvil.
+ * @returns {Promise<Array<Object>>} Listado de lecturas de campo.
+ */
+export async function downloadMobileReadings() {
+  const dbRef = ref(rtdb);
+  try {
+    const snapshot = await get(child(dbRef, 'registros/lecturas_campo'));
+    if (snapshot.exists()) {
+      const val = snapshot.val();
+      if (val) {
+        return Object.values(val);
+      }
+    }
+    return [];
+  } catch (error) {
+    throw new Error("Error al descargar lecturas de campo desde Firebase: " + error.message);
+  }
+}
+
+/**
+ * Guarda el enlace de descarga de la APK en Firebase.
+ * @param {string} url - Enlace de descarga.
+ * @returns {Promise<void>}
+ */
+export async function saveApkUrl(url) {
+  try {
+    const dbRef = ref(rtdb, 'config/apkUrl');
+    await set(dbRef, url);
+  } catch (error) {
+    throw new Error("Error al guardar URL de APK: " + error.message);
+  }
+}
+
+/**
+ * Descarga el enlace de descarga de la APK desde Firebase.
+ * @returns {Promise<string>} Enlace de descarga.
+ */
+export async function getApkUrl() {
+  try {
+    const dbRef = ref(rtdb);
+    const snap = await get(child(dbRef, 'config/apkUrl'));
+    return snap.exists() ? snap.val() : '';
+  } catch (error) {
+    throw new Error("Error al descargar URL de APK: " + error.message);
+  }
+}
+
+/**
+ * Sube el archivo APK a Firebase Storage y guarda la URL en Database.
+ * @param {File} file - Archivo de la APK.
+ * @returns {Promise<string>} Enlace de descarga.
+ */
+export async function uploadApkFile(file) {
+  try {
+    const apkRef = storageRef(storage, 'apks/balance-hidrico.apk');
+    const snapshot = await uploadBytes(apkRef, file);
+    const downloadUrl = await getDownloadURL(snapshot.ref);
+    await saveApkUrl(downloadUrl);
+    return downloadUrl;
+  } catch (error) {
+    throw new Error("Error al subir archivo APK: " + error.message);
+  }
+}
+
+/**
+ * Elimina la APK de Firebase Storage y vacía la URL en Database.
+ * @returns {Promise<void>}
+ */
+export async function deleteApkFile() {
+  try {
+    const apkRef = storageRef(storage, 'apks/balance-hidrico.apk');
+    try {
+      await deleteObject(apkRef);
+    } catch (e) {
+      console.warn("El archivo no existía en Storage o ya fue eliminado:", e.message);
+    }
+    await saveApkUrl('');
+  } catch (error) {
+    throw new Error("Error al eliminar archivo APK: " + error.message);
   }
 }

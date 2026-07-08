@@ -24,19 +24,22 @@ import {
   Sun,
   Search,
   Download,
-  Palette
+  Palette,
+  Compass,
+  ArrowLeft,
+  Play,
+  Pause
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import 'leaflet/dist/leaflet.css';
 import { parseHistoricalExcel, calculateWaterBalance, parseSoilsExcel } from './services/excelParser';
 import { saveHistoricalRecords, loadHistoricalRecords, clearHistoricalRecords, getLocalMap, saveLocalMap, saveSoilRecords, loadSoilRecords, clearSoilRecords } from './services/dbStore';
-import { uploadRecords, downloadRecords, uploadMap, downloadMaps, uploadSoilRecords, downloadSoilRecords, getAdminCredentials } from './services/firebaseService';
+import { uploadRecords, downloadRecords, uploadMap, downloadMaps, uploadSoilRecords, downloadSoilRecords, getAdminCredentials, downloadMobileTracks, downloadMobileReadings } from './services/firebaseService';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, LineController, BarController, Filler } from 'chart.js';
 import L from 'leaflet';
 import { Chart } from 'react-chartjs-2';
-import { MapContainer, TileLayer, GeoJSON as LeafletGeoJSON, Tooltip as LeafletTooltip, Marker as LeafletMarker, CircleMarker as LeafletCircleMarker, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, GeoJSON as LeafletGeoJSON, Tooltip as LeafletTooltip, Marker as LeafletMarker, CircleMarker as LeafletCircleMarker, useMap, Polyline, ZoomControl } from 'react-leaflet';
 import html2canvas from 'html2canvas';
-
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -107,7 +110,7 @@ const customDataLabelsPlugin = {
     });
     ctx.restore();
   }
-};
+  };
 
 const horizontalLinePlugin = {
   id: 'horizontalLine',
@@ -318,7 +321,7 @@ const getLoteUniqueKey = (properties, index) => {
 };
 
 const MONTH_NAMES_LONG = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
-function FitMapBounds({ geojson }) {
+function FitMapBounds({ geojson, triggerReset }) {
   const map = useMap();
   useEffect(() => {
     if (geojson && map) {
@@ -338,9 +341,170 @@ function FitMapBounds({ geojson }) {
       }, 150);
       return () => clearTimeout(timer);
     }
-  }, [geojson, map]);
+  }, [geojson, map, triggerReset]);
   return null;
 }
+
+function MapInteractionController({ active }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!map) return;
+    try {
+      if (active) {
+        if (map.dragging) map.dragging.enable();
+        if (map.doubleClickZoom) map.doubleClickZoom.enable();
+        if (map.scrollWheelZoom) map.scrollWheelZoom.enable();
+        if (map.boxZoom) map.boxZoom.enable();
+        if (map.keyboard) map.keyboard.enable();
+        if (map.touchZoom) map.touchZoom.enable();
+      } else {
+        if (map.dragging) map.dragging.disable();
+        if (map.doubleClickZoom) map.doubleClickZoom.disable();
+        if (map.scrollWheelZoom) map.scrollWheelZoom.disable();
+        if (map.boxZoom) map.boxZoom.disable();
+        if (map.keyboard) map.keyboard.disable();
+        if (map.touchZoom) map.touchZoom.disable();
+      }
+    } catch (e) {
+      console.warn("Fallo al cambiar interacciones del mapa:", e);
+    }
+  }, [active, map]);
+  return null;
+}
+
+function calculateBearing(lat1, lon1, lat2, lon2) {
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const lat1Rad = lat1 * Math.PI / 180;
+  const lat2Rad = lat2 * Math.PI / 180;
+  const y = Math.sin(dLon) * Math.cos(lat2Rad);
+  const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) - Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLon);
+  let brng = Math.atan2(y, x) * 180 / Math.PI;
+  return (brng + 360) % 360;
+}
+
+function getCoordinatesDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3; // Metros
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c; // Metros
+}
+
+function detectTrackStops(track) {
+  if (!track || !track.recorrido || track.recorrido.length < 2) return [];
+  const stops = [];
+  const points = track.recorrido;
+  let currentGroup = [];
+  
+  for (let i = 0; i < points.length; i++) {
+    const pt = points[i];
+    if (currentGroup.length === 0) {
+      currentGroup.push(pt);
+    } else {
+      const anchor = currentGroup[0];
+      const dist = getCoordinatesDistance(anchor.lat, anchor.lon, pt.lat, pt.lon);
+      if (dist < 12) { // Menos de 12 metros de desplazamiento
+        currentGroup.push(pt);
+      } else {
+        const durationMs = pt.timestamp - anchor.timestamp;
+        if (durationMs >= 120000) { // Parado más de 2 minutos
+          stops.push({
+            lat: anchor.lat,
+            lon: anchor.lon,
+            startTime: anchor.timestamp,
+            endTime: pt.timestamp,
+            durationMinutes: Math.round(durationMs / 60000)
+          });
+        }
+        currentGroup = [pt];
+      }
+    }
+  }
+  if (currentGroup.length > 1) {
+    const anchor = currentGroup[0];
+    const lastPt = currentGroup[currentGroup.length - 1];
+    const durationMs = lastPt.timestamp - anchor.timestamp;
+    if (durationMs >= 120000) {
+      stops.push({
+        lat: anchor.lat,
+        lon: anchor.lon,
+        startTime: anchor.timestamp,
+        endTime: lastPt.timestamp,
+        durationMinutes: Math.round(durationMs / 60000)
+      });
+    }
+  }
+  return stops;
+}
+
+function getActiveTrack(selectedTrackId, mobileTracks, mobileReadings) {
+  if (!selectedTrackId) return null;
+  const track = mobileTracks.find(t => t.id === selectedTrackId);
+  if (track) return track;
+  
+  const match = selectedTrackId.match(/^readings-(.+)-(\d+)$/);
+  if (!match) return null;
+  const user = match[1];
+  const ts = parseInt(match[2], 10);
+  const dateStr = new Date(ts).toDateString();
+  
+  const readings = mobileReadings.filter(r => r.usuario === user && new Date(r.timestamp).toDateString() === dateStr);
+  if (readings.length === 0) return null;
+  
+  const recorrido = readings
+    .filter(r => r.gps)
+    .map(r => ({
+      lat: r.gps.lat,
+      lon: r.gps.lon,
+      timestamp: r.timestamp,
+      accuracy: 10
+    }))
+    .sort((a, b) => a.timestamp - b.timestamp);
+    
+  return {
+    id: selectedTrackId,
+    usuario: user,
+    timestamp: ts,
+    recorrido
+  };
+}
+
+function FitTrackBounds({ track }) {
+  const map = useMap();
+  useEffect(() => {
+    if (track && track.recorrido && track.recorrido.length > 0 && map) {
+      const timer = setTimeout(() => {
+        try {
+          map.invalidateSize();
+          const positions = track.recorrido.map(p => [p.lat, p.lon]);
+          const bounds = L.latLngBounds(positions);
+          if (bounds.isValid()) {
+            const eastWestSpan = Math.abs(bounds.getEast() - bounds.getWest());
+            const northSouthSpan = Math.abs(bounds.getNorth() - bounds.getSouth());
+            if (eastWestSpan < 0.0008 && northSouthSpan < 0.0008) {
+              // Si el recorrido tiene muy poca extensión (ej: un solo punto o estacionario),
+              // centramos el mapa en el recorrido y fijamos un zoom moderado (15) para no ir al infinito
+              map.setView(bounds.getCenter(), 15);
+            } else {
+              // Zoom adaptativo ajustado al recorrido completo
+              map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15.5 });
+            }
+          }
+        } catch (e) {
+          console.error("Error al enfocar el mapa en el recorrido GPS:", e);
+        }
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [track, map]);
+  return null;
+}
+
 function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const logoTimelineRef = useRef(null);
@@ -601,6 +765,14 @@ function App() {
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [mobileTracks, setMobileTracks] = useState([]);
+  const [mobileReadings, setMobileReadings] = useState([]);
+  const [trackActive, setTrackActive] = useState(false);
+  const [useSatelliteBackground, setUseSatelliteBackground] = useState(false);
+  const [selectedTrackId, setSelectedTrackId] = useState(null);
+  const [playbackIndex, setPlaybackIndex] = useState(0);
+  const [interpolationFactor, setInterpolationFactor] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   const activeFincaKey = selectedMapFinca === 'Todas' ? 'HLG' : (FINCA_MAPS_KEYS[selectedMapFinca] || selectedMapFinca);
   const activeMapGeoJSON = fincaMaps[activeFincaKey];
@@ -1465,6 +1637,20 @@ function App() {
       }
     } catch (firebaseSoilsErr) {
       console.warn("Fallo al revalidar suelos con Firebase Cloud (offline):", firebaseSoilsErr);
+    }
+
+    try {
+      const cloudTracks = await downloadMobileTracks();
+      setMobileTracks(cloudTracks);
+    } catch (firebaseTracksErr) {
+      console.warn("Fallo al descargar recorridos móviles:", firebaseTracksErr);
+    }
+
+    try {
+      const cloudReadings = await downloadMobileReadings();
+      setMobileReadings(cloudReadings);
+    } catch (firebaseReadingsErr) {
+      console.warn("Fallo al descargar lecturas de campo:", firebaseReadingsErr);
     } finally {
       setLoading(false);
       setLoadingSource('');
@@ -1775,6 +1961,73 @@ function App() {
       setShowLoginModal(true);
     }
   };
+
+  const fetchTracksAndReadings = async () => {
+    try {
+      const cloudTracks = await downloadMobileTracks();
+      setMobileTracks(cloudTracks);
+      const cloudReadings = await downloadMobileReadings();
+      setMobileReadings(cloudReadings);
+    } catch (err) {
+      console.warn("Error al descargar datos móviles en tiempo real:", err);
+    }
+  };
+
+  // Alternar el estado de visualización de los recorridos móviles (Track)
+  const handleToggleTrack = (active) => {
+    setTrackActive(active);
+    if (active) {
+      fetchTracksAndReadings(); // Descargar datos de Firebase inmediatamente al activar el modo Track
+      setSelectedMapFinca('01'); // Finca activa HLG (código 01)
+      setSelectedMapPluviometro('Todos'); // Pluviómetros en todos
+      setSelectedMapAnio('2026'); // Año en 2026
+      setSelectedMapMes('Todos'); // Mes en todos
+      setShowPluvZones(false); // Colores desactivados
+      setHumDisplayMode('off'); // Humedad desactivado
+      setSelectedLotInfo(null); // Limpiar lote seleccionado
+      setSelectedTrackId(null); // Limpiar track seleccionado
+      setPlaybackIndex(0); // Reiniciar animación
+      setIsPlaying(false); // Pausar
+    } else {
+      setSelectedTrackId(null);
+      setPlaybackIndex(0);
+      setIsPlaying(false);
+    }
+  };
+
+  // Efecto para la reproducción automática del recorrido GPS con interpolación suave
+  useEffect(() => {
+    let interval = null;
+    if (isPlaying && selectedTrackId) {
+      const track = getActiveTrack(selectedTrackId, mobileTracks, mobileReadings);
+      if (track && track.recorrido && track.recorrido.length > 0) {
+        interval = setInterval(() => {
+          setInterpolationFactor(prevFactor => {
+            const nextFactor = prevFactor + 0.05; // 40ms / 800ms = 0.05 por paso
+            if (nextFactor >= 1) {
+              setPlaybackIndex(prevIndex => {
+                if (prevIndex >= track.recorrido.length - 2) {
+                  // Llegamos al final del recorrido
+                  setIsPlaying(false);
+                  return track.recorrido.length - 1;
+                }
+                return prevIndex + 1;
+              });
+              return 0; // Reiniciar para el siguiente tramo
+            }
+            return nextFactor;
+          });
+        }, 40); // 25 FPS para un deslizamiento suave y continuo
+      } else {
+        setIsPlaying(false);
+      }
+    } else {
+      setInterpolationFactor(0);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isPlaying, selectedTrackId, mobileTracks]);
 
   // Listado de fincas únicas
   const uniqueFincas = useMemo(() => {
@@ -3615,7 +3868,7 @@ function App() {
                   fontWeight: 600,
                   marginTop: '1px'
                 }}>hidrico</span>
-              </div>
+                      </div>
             </div>
 
             {/* Vertical divider */}
@@ -3648,6 +3901,26 @@ function App() {
 
         {/* Contenedor de Pestañas y Contenido para eliminar el espacio vacío y permitir fusión tipo carpeta */}
         <div className="tab-container" style={{ display: 'flex', flexDirection: 'column' }}>
+          
+          {errorMessage && (
+            <div style={{
+              background: 'rgba(239, 68, 68, 0.12)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              color: '#f87171',
+              padding: '1rem',
+              borderRadius: '8px',
+              margin: '1rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.25rem'
+            }}>
+              <strong style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem' }}>
+                <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444' }}></span>
+                Error de Conexión o Lectura en Firebase
+              </strong>
+              <p style={{ margin: 0, fontSize: '0.8rem', opacity: 0.85 }}>{errorMessage}</p>
+            </div>
+          )}
           
           {/* Pestañas de navegación */}
           <nav className="tab-navigation">
@@ -4791,6 +5064,33 @@ function App() {
                         </button>
                       </div>
 
+                      {/* Filtro Monitoreo GPS */}
+                      <div className="filter-group" style={{ minWidth: '150px', margin: 0 }}>
+                        <label htmlFor="map-gps-select" style={{ fontSize: '0.75rem', marginBottom: '0.2rem', display: 'flex', alignItems: 'center', color: '#00f2fe' }}>
+                          <Compass size={11} style={{ marginRight: '4px' }} /> Monitoreo GPS
+                        </label>
+                        <select 
+                          id="map-gps-select"
+                          className="select-control"
+                          value={trackActive ? 'Track' : 'Desactivado'}
+                          style={{ 
+                            height: '34px', 
+                            padding: '0.25rem 0.5rem', 
+                            fontSize: '0.85rem',
+                            borderColor: trackActive ? '#00f2fe' : 'var(--border-light)',
+                            background: trackActive ? 'rgba(0, 242, 254, 0.05)' : 'transparent',
+                            color: trackActive ? '#00f2fe' : 'var(--text-main)'
+                          }}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            handleToggleTrack(val === 'Track');
+                          }}
+                        >
+                          <option value="Desactivado">Desactivado</option>
+                          <option value="Track">Track</option>
+                        </select>
+                      </div>
+
                       {/* ⚠️ AVISO PROVISIONAL: Tipo de suelo pendiente — eliminar cuando se entregue el archivo de suelos */}
                       {humDisplayMode !== 'off' && (
                         <div style={{
@@ -4822,6 +5122,44 @@ function App() {
                           Mapa interactivo de lotes y distribución de pluviómetros de la finca.
                         </p>
                       </div>
+
+                      {/* Botón de Mapa Satelital */}
+                      <button
+                        onClick={() => trackActive && setUseSatelliteBackground(!useSatelliteBackground)}
+                        disabled={!trackActive}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          background: !trackActive 
+                            ? 'rgba(255, 255, 255, 0.02)'
+                            : useSatelliteBackground 
+                              ? 'rgba(0, 242, 254, 0.12)' 
+                              : 'rgba(255, 255, 255, 0.08)',
+                          border: !trackActive 
+                            ? '1px solid rgba(255, 255, 255, 0.06)'
+                            : useSatelliteBackground 
+                              ? '1px solid #00f2fe' 
+                              : '1px solid rgba(255, 255, 255, 0.2)',
+                          color: !trackActive 
+                            ? 'var(--text-muted)' 
+                            : useSatelliteBackground 
+                              ? '#00f2fe' 
+                              : '#fff',
+                          padding: '0.45rem 1rem',
+                          borderRadius: 'var(--radius-sm)',
+                          fontSize: '0.8rem',
+                          fontWeight: 500,
+                          cursor: !trackActive ? 'not-allowed' : 'pointer',
+                          transition: 'all 0.25s ease',
+                          opacity: !trackActive ? 0.45 : 1,
+                          boxShadow: useSatelliteBackground && trackActive ? '0 0 10px rgba(0, 242, 254, 0.1)' : 'none'
+                        }}
+                        title={!trackActive ? "El fondo satelital solo se puede activar al visualizar un recorrido de monitoreo GPS" : "Alternar fondo del mapa entre vectorial y satélite"}
+                      >
+                        <Layers size={14} />
+                        <span>Fondo Satelital: {useSatelliteBackground && trackActive ? 'ACTIVO' : 'APAGADO'}</span>
+                      </button>
                     </div>
 
                     {/* Diseño en dos columnas: Mapa a la izquierda, Tarjeta a la derecha */}
@@ -4835,18 +5173,25 @@ function App() {
                           zoomSnap={0.1}
                           zoomControl={false}
                           attributionControl={false}
-                          doubleClickZoom={false}
-                          scrollWheelZoom={false}
-                          boxZoom={false}
-                          touchZoom={false}
-                          dragging={false}
-                          keyboard={false}
+                          doubleClickZoom={true}
+                          scrollWheelZoom={true}
+                          boxZoom={true}
+                          touchZoom={true}
+                          dragging={true}
+                          keyboard={true}
                           closeTooltipOnClick={false}
                           style={{ height: '100%', width: '100%', background: '#080c14' }}
                         >
+                          {useSatelliteBackground && trackActive && (
+                            <TileLayer
+                              url="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
+                              maxZoom={20}
+                              attribution="&copy; Google Maps"
+                            />
+                          )}
                           <LeafletGeoJSON
                             ref={geoJsonRef}
-                            key={`${activeFincaKey}`}
+                            key={`${activeFincaKey}_${showPluvZones}_${humDisplayMode}_${trackActive}`}
                             data={activeMapGeoJSON}
                             style={(feature) => {
                               const isSel = checkIfFeatureIsSelected(feature, selectedLotInfo);
@@ -4857,7 +5202,12 @@ function App() {
                               let fillOpacity = isSel ? 0.2 : 0.08;
                               let weight = isSel ? 2.5 : 0.8;
 
-                              if (showPluvZones) {
+                              if (trackActive) {
+                                fillColor = 'rgba(56, 189, 248, 0.06)';
+                                fillOpacity = 0.06;
+                                borderColor = 'rgba(56, 189, 248, 0.45)';
+                                weight = 1.1;
+                              } else if (showPluvZones) {
                                 const pluvColor = getPastelColorForPluviometro(pluvVal);
                                 fillColor = pluvColor;
                                 fillOpacity = isSel ? 0.35 : 0.16;
@@ -5002,29 +5352,526 @@ function App() {
                             }}
                           />
 
-                          {selectedLotCenter && (
-                            <LeafletCircleMarker
-                              center={selectedLotCenter}
-                              radius={0}
-                              pathOptions={{ stroke: false, fill: false }}
-                            >
-                              <LeafletTooltip
-                                permanent={true}
-                                direction="center"
-                                className="custom-map-tooltip"
-                              >
-                                {selectedLotInfo.properties.NOMBRELOTE || selectedLotInfo.properties.nombrelote || selectedLotInfo.properties['NOMBRE LOT'] || selectedLotInfo.properties.lote || selectedLotInfo.properties.LOTE || selectedLotInfo.properties.name || selectedLotInfo.properties.id || ''}
-                              </LeafletTooltip>
-                            </LeafletCircleMarker>
-                          )}
-                          
-                          <FitMapBounds geojson={activeMapGeoJSON} />
-                        </MapContainer>
+                           {/* Estilos CSS para animaciones de paradas y estaciones */}
+                           <style dangerouslySetInnerHTML={{__html: `
+                             @keyframes stop-pulse {
+                               0% { transform: scale(0.6); opacity: 0.7; }
+                               50% { transform: scale(1.3); opacity: 0.2; }
+                               100% { transform: scale(0.6); opacity: 0.7; }
+                             }
+                             @keyframes station-pulse {
+                               0% { transform: scale(0.7); opacity: 0.8; }
+                               50% { transform: scale(1.25); opacity: 0.15; }
+                               100% { transform: scale(0.7); opacity: 0.8; }
+                             }
+                             .track-playhead-arrow {
+                               transition: transform 0.1s linear, top 0.15s ease-out, left 0.15s ease-out;
+                             }
+                           `}} />
+
+                            {/* Representar recorrido GPS en el mapa */}
+                            {trackActive && selectedTrackId && (() => {
+                              const track = getActiveTrack(selectedTrackId, mobileTracks, mobileReadings);
+                              if (!track || !track.recorrido || track.recorrido.length === 0) return null;
+                              const positions = track.recorrido.map(p => [p.lat, p.lon]);
+                              return (
+                                <Polyline 
+                                  positions={positions} 
+                                  pathOptions={{ color: '#00f2fe', weight: 4, opacity: 0.85, dashArray: '5, 8' }} 
+                                />
+                              );
+                            })()}
+
+                            {/* Representar paradas prolongadas de inactividad (>2 min) */}
+                            {trackActive && selectedTrackId && (() => {
+                              const track = getActiveTrack(selectedTrackId, mobileTracks, mobileReadings);
+                              if (!track) return null;
+                              const stops = detectTrackStops(track);
+
+                              return stops.map((stop, idx) => {
+                                const customStopIcon = L.divIcon({
+                                  html: `<div style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; position: relative;">
+                                    <div style="position: absolute; width: 100%; height: 100%; border-radius: 50%; background: #ff1744; opacity: 0.35; animation: stop-pulse 1.8s infinite ease-in-out;"></div>
+                                    <div style="position: absolute; width: 10px; height: 10px; border-radius: 50%; background: #ff1744; border: 1.5px solid #fff; box-shadow: 0 0 5px rgba(0,0,0,0.6);"></div>
+                                  </div>`,
+                                  className: 'custom-stop-marker',
+                                  iconSize: [32, 32],
+                                  iconAnchor: [16, 16]
+                                });
+                                
+                                return (
+                                  <LeafletMarker
+                                    key={`stop-${idx}`}
+                                    position={[stop.lat, stop.lon]}
+                                    icon={customStopIcon}
+                                  >
+                                    <LeafletTooltip permanent={false} direction="top">
+                                      <span>
+                                        🛑 <strong>Parada de {stop.durationMinutes} min</strong><br/>
+                                        Inició: {new Date(stop.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      </span>
+                                    </LeafletTooltip>
+                                  </LeafletMarker>
+                                );
+                              });
+                            })()}
+
+                            {/* Representar marcadores de lecturas de campo (formularios) georreferenciadas */}
+                            {trackActive && selectedTrackId && (() => {
+                              const track = getActiveTrack(selectedTrackId, mobileTracks, mobileReadings);
+                              if (!track) return null;
+                              const trackDateStr = new Date(track.timestamp).toDateString();
+                              const readingsOfTrack = mobileReadings.filter(r => 
+                                r.usuario === track.usuario && 
+                                new Date(r.timestamp).toDateString() === trackDateStr
+                              );
+
+                              return readingsOfTrack.map((reading, idx) => {
+                                if (!reading.gps) return null;
+                                
+                                const customStationIcon = L.divIcon({
+                                  html: `<div style="width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; position: relative;">
+                                    <div style="position: absolute; width: 100%; height: 100%; border-radius: 50%; background: #ff9100; opacity: 0.35; animation: station-pulse 2.2s infinite ease-in-out;"></div>
+                                    <div style="position: absolute; width: 7px; height: 7px; border-radius: 50%; background: #fff; border: 2px solid #ff9100; box-shadow: 0 0 4px rgba(0,0,0,0.4);"></div>
+                                  </div>`,
+                                  className: 'custom-station-marker',
+                                  iconSize: [24, 24],
+                                  iconAnchor: [12, 12]
+                                });
+
+                                return (
+                                  <LeafletMarker
+                                    key={`reading-marker-${idx}`}
+                                    position={[reading.gps.lat, reading.gps.lon]}
+                                    icon={customStationIcon}
+                                  >
+                                    <LeafletTooltip permanent={false} direction="top">
+                                      <span>
+                                        <strong>Estación: Palma {reading.palma}</strong><br/>
+                                        Lote: {reading.lote} (Lín. {reading.linea})<br/>
+                                        Subsector: {reading.subsector}<br/>
+                                        {reading.observacion ? `Obs: ${reading.observacion}` : ''}
+                                      </span>
+                                    </LeafletTooltip>
+                                  </LeafletMarker>
+                                );
+                              });
+                            })()}
+
+                            {/* Representar la flechita indicadora del reproductor GPS */}
+                            {trackActive && selectedTrackId && (() => {
+                              const track = getActiveTrack(selectedTrackId, mobileTracks, mobileReadings);
+                              if (!track || !track.recorrido || track.recorrido.length === 0) return null;
+                              
+                              const index = Math.min(playbackIndex, track.recorrido.length - 1);
+                              const nextIndex = Math.min(index + 1, track.recorrido.length - 1);
+                              const pt1 = track.recorrido[index];
+                              const pt2 = track.recorrido[nextIndex];
+                              if (!pt1) return null;
+
+                              // Calcular posición interpolada suave
+                              const lat = pt1.lat + (pt2.lat - pt1.lat) * interpolationFactor;
+                              const lon = pt1.lon + (pt2.lon - pt1.lon) * interpolationFactor;
+
+                              const bearing = pt1 && pt2 && index !== nextIndex 
+                                ? calculateBearing(pt1.lat, pt1.lon, pt2.lat, pt2.lon) 
+                                : 0;
+
+                              const arrowIcon = L.divIcon({
+                                html: `<div style="transform: rotate(${bearing}deg); font-size: 22px; color: #00f2fe; text-shadow: 0 0 4px rgba(0,0,0,0.9), 0 0 8px #00f2fe; line-height: 1; display: flex; align-items: center; justify-content: center;" class="track-playhead-arrow">➤</div>`,
+                                className: 'playhead-arrow-marker',
+                                iconSize: [26, 26],
+                                iconAnchor: [13, 13]
+                              });
+
+                              return (
+                                <LeafletMarker
+                                  position={[lat, lon]}
+                                  icon={arrowIcon}
+                                  zIndexOffset={1500}
+                                />
+                              );
+                            })()}
+
+                           {selectedLotCenter && !trackActive && (
+                             <LeafletCircleMarker
+                               center={selectedLotCenter}
+                               radius={0}
+                               pathOptions={{ stroke: false, fill: false }}
+                             >
+                               <LeafletTooltip
+                                 permanent={true}
+                                 direction="center"
+                                 className="custom-map-tooltip"
+                               >
+                                 {selectedLotInfo.properties.NOMBRELOTE || selectedLotInfo.properties.nombrelote || selectedLotInfo.properties['NOMBRE LOT'] || selectedLotInfo.properties.lote || selectedLotInfo.properties.LOTE || selectedLotInfo.properties.name || selectedLotInfo.properties.id || ''}
+                               </LeafletTooltip>
+                             </LeafletCircleMarker>
+                           )}
+                           
+                            <MapInteractionController active={trackActive} />
+
+                            {!trackActive || !selectedTrackId ? (
+                              <FitMapBounds geojson={activeMapGeoJSON} triggerReset={`${trackActive}_${selectedTrackId}`} />
+                            ) : (
+                              (() => {
+                                const track = getActiveTrack(selectedTrackId, mobileTracks, mobileReadings);
+                                return <FitTrackBounds track={track} />;
+                              })()
+                            )}
+</MapContainer>
                       </div>
 
                       {/* Columna Derecha: Tarjeta de Detalles del Lote o Finca */}
                       <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', padding: '1rem 1.15rem', height: '550px', overflowY: 'auto', border: '1px solid var(--border-light)', gap: '0.8rem', background: 'rgba(15, 23, 42, 0.4)' }}>
-                        {selectedLotInfo ? (
+                        {trackActive ? (
+                          selectedTrackId ? (
+                            // Vista de Detalles del Track Seleccionado
+                            (() => {
+                              const track = mobileTracks.find(t => t.id === selectedTrackId);
+                              if (!track) return <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Track no encontrado</div>;
+                              
+                              const trackDate = new Date(track.timestamp);
+                              const formattedDate = trackDate.toLocaleString('es-ES', {
+                                day: 'numeric',
+                                month: 'long',
+                                year: 'numeric'
+                              });
+
+                              // Calcular paradas prolongadas
+                              const stops = detectTrackStops(track);
+
+                              // Filtrar lecturas del mismo usuario en el mismo día
+                              const trackDateStr = trackDate.toDateString();
+                              const readingsOfTrack = mobileReadings.filter(r => 
+                                r.usuario === track.usuario && 
+                                new Date(r.timestamp).toDateString() === trackDateStr
+                              );
+
+                              return (
+                                <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '0.7rem', minHeight: 0 }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.45rem', flexShrink: 0 }}>
+                                    <button 
+                                      onClick={() => {
+                                        setSelectedTrackId(null);
+                                        setPlaybackIndex(0);
+                                        setIsPlaying(false);
+                                      }}
+                                      style={{ background: 'transparent', border: 'none', color: '#00f2fe', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', padding: 0 }}
+                                    >
+                                      <ArrowLeft size={14} /> Volver a lista
+                                    </button>
+                                    <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)' }}>Monitoreo GPS</span>
+                                  </div>
+
+                                  {/* Encabezado del Recorrido */}
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.78rem', background: 'rgba(255,255,255,0.02)', padding: '0.5rem', borderRadius: '4px', borderLeft: '3px solid #00f2fe', flexShrink: 0 }}>
+                                    <div style={{ color: 'var(--text-muted)' }}>Operador: <strong style={{ color: '#fff' }}>{track.usuario || 'admin'}</strong></div>
+                                    <div style={{ color: 'var(--text-muted)' }}>Fecha: <strong style={{ color: '#fff' }}>{formattedDate}</strong></div>
+                                    <div style={{ color: 'var(--text-muted)' }}>Puntos: <strong style={{ color: '#fff' }}>{track.recorrido ? track.recorrido.length : 0}</strong></div>
+                                  </div>
+
+                                  {/* Reproductor / Slider de Línea de Tiempo */}
+                                  {track.recorrido && track.recorrido.length > 0 && (
+                                    <div style={{ background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', padding: '0.6rem 0.8rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', flexShrink: 0 }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#00f2fe' }}>Línea de Tiempo</span>
+                                        <button 
+                                          onClick={() => setIsPlaying(prev => !prev)} 
+                                          style={{
+                                            background: isPlaying ? 'rgba(255, 23, 68, 0.15)' : 'rgba(0, 242, 254, 0.12)',
+                                            border: isPlaying ? '1px solid #ff1744' : '1px solid #00f2fe',
+                                            color: isPlaying ? '#ff1744' : '#00f2fe',
+                                            cursor: 'pointer',
+                                            padding: '0.2rem 0.5rem',
+                                            borderRadius: '4px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                            fontSize: '0.68rem',
+                                            fontWeight: 'bold',
+                                            transition: 'all 0.2s'
+                                          }}
+                                        >
+                                          {isPlaying ? <Pause size={10} /> : <Play size={10} />}
+                                          {isPlaying ? 'Pausar' : 'Reproducir'}
+                                        </button>
+                                      </div>
+                                      
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                                        <input 
+                                          type="range"
+                                          min={0}
+                                          max={track.recorrido.length - 1}
+                                          value={playbackIndex}
+                                          onChange={(e) => {
+                                            setPlaybackIndex(parseInt(e.target.value, 10));
+                                            setIsPlaying(false);
+                                          }}
+                                          style={{
+                                            flex: 1,
+                                            accentColor: '#00f2fe',
+                                            height: '4px',
+                                            borderRadius: '2px',
+                                            cursor: 'pointer'
+                                          }}
+                                        />
+                                      </div>
+
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                                        <span>Inicio</span>
+                                        <span style={{ color: '#fff', fontWeight: 600 }}>
+                                          {new Date(track.recorrido[playbackIndex]?.timestamp || track.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                        </span>
+                                        <span>Fin</span>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Listado de Paradas e inactividad detectada */}
+                                  <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.6rem', minHeight: 0 }}>
+                                    
+                                    {/* Sección Paradas Prolongadas */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                                      <span style={{ fontSize: '0.7rem', color: '#ff1744', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                        Paradas / Tiempos Muertos ({stops.length})
+                                      </span>
+                                      {stops.length === 0 ? (
+                                        <p style={{ color: 'var(--text-muted)', fontSize: '0.7rem', margin: 0, fontStyle: 'italic' }}>No se registraron paradas prolongadas en este recorrido.</p>
+                                      ) : (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                                          {stops.map((stop, idx) => {
+                                            const stopTime = new Date(stop.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                            
+                                            // Encontrar índice más cercano para snapping
+                                            const snapToStopIndex = () => {
+                                              const nearestIdx = track.recorrido.reduce((nearest, point, idx) => {
+                                                const diffCurrent = Math.abs(point.timestamp - stop.startTime);
+                                                const diffNearest = Math.abs(track.recorrido[nearest].timestamp - stop.startTime);
+                                                return diffCurrent < diffNearest ? idx : nearest;
+                                              }, 0);
+                                              setPlaybackIndex(nearestIdx);
+                                              setIsPlaying(false);
+                                            };
+
+                                            return (
+                                              <div 
+                                                key={idx} 
+                                                onClick={snapToStopIndex}
+                                                style={{ 
+                                                  display: 'flex', 
+                                                  justifyContent: 'space-between', 
+                                                  alignItems: 'center', 
+                                                  background: 'rgba(255, 23, 68, 0.08)', 
+                                                  border: '1px solid rgba(255, 23, 68, 0.2)', 
+                                                  padding: '0.3rem 0.5rem', 
+                                                  borderRadius: '4px', 
+                                                  fontSize: '0.72rem', 
+                                                  cursor: 'pointer',
+                                                  transition: 'all 0.2s' 
+                                                }}
+                                                onMouseEnter={(e) => e.currentTarget.style.borderColor = '#ff1744'}
+                                                onMouseLeave={(e) => e.currentTarget.style.borderColor = 'rgba(255, 23, 68, 0.2)'}
+                                              >
+                                                <span style={{ color: '#ff8a80', fontWeight: 'bold' }}>🛑 Parada a las {stopTime}</span>
+                                                <span style={{ background: '#ff1744', color: '#fff', fontSize: '0.65rem', padding: '1px 5px', borderRadius: '3px', fontWeight: 'bold' }}>{stop.durationMinutes} min</span>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Sección Lecturas Registradas */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '0.2rem' }}>
+                                      <span style={{ fontSize: '0.7rem', color: '#ff9100', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                        Estaciones de Registro ({readingsOfTrack.length})
+                                      </span>
+                                      {readingsOfTrack.length === 0 ? (
+                                        <p style={{ color: 'var(--text-muted)', fontSize: '0.7rem', margin: 0, fontStyle: 'italic' }}>No se enviaron lecturas de campo en esta jornada.</p>
+                                      ) : (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                                          {readingsOfTrack.map((reading, idx) => {
+                                            const snapToReadingIndex = () => {
+                                              if (!reading.gps) return;
+                                              const nearestIdx = track.recorrido.reduce((nearest, point, idx) => {
+                                                const diffCurrent = Math.abs(point.timestamp - reading.timestamp);
+                                                const diffNearest = Math.abs(track.recorrido[nearest].timestamp - reading.timestamp);
+                                                return diffCurrent < diffNearest ? idx : nearest;
+                                              }, 0);
+                                              setPlaybackIndex(nearestIdx);
+                                              setIsPlaying(false);
+                                            };
+
+                                            return (
+                                              <div 
+                                                key={idx} 
+                                                onClick={snapToReadingIndex}
+                                                style={{ 
+                                                  background: 'rgba(0,0,0,0.2)', 
+                                                  border: '1px solid var(--border-light)', 
+                                                  borderRadius: '6px', 
+                                                  padding: '0.45rem', 
+                                                  display: 'flex', 
+                                                  flexDirection: 'column', 
+                                                  gap: '0.15rem', 
+                                                  cursor: 'pointer',
+                                                  transition: 'all 0.2s'
+                                                }}
+                                                onMouseEnter={(e) => e.currentTarget.style.borderColor = '#ff9100'}
+                                                onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-light)'}
+                                              >
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem' }}>
+                                                  <span style={{ color: '#ff9100', fontWeight: 'bold' }}>Finca {reading.finca} · Lote {reading.lote}</span>
+                                                  <span style={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>Palma {reading.palma} · Lín. {reading.linea}</span>
+                                                </div>
+                                                <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.7)' }}>
+                                                  Subsector: <strong style={{ color: '#fff' }}>{reading.subsector}</strong>
+                                                </div>
+                                                {reading.observacion ? (
+                                                  <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.68rem', color: '#fff', background: 'rgba(255,255,255,0.03)', padding: '2px 5px', borderRadius: '3px', fontStyle: 'italic' }}>
+                                                    Obs: {reading.observacion}
+                                                  </p>
+                                                ) : null}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                  </div>
+                                </div>
+                              );
+                            })()
+                          ) : (
+                            // Vista de Listado de Tracks disponibles
+                            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '0.8rem', minHeight: 0 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.45rem', flexShrink: 0 }}>
+                                <h4 style={{ margin: 0, fontFamily: 'var(--font-display)', color: '#00f2fe', fontWeight: 600, fontSize: '0.95rem' }}>
+                                  Recorridos GPS (Campo)
+                                </h4>
+                                <button
+                                  onClick={fetchTracksAndReadings}
+                                  style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: '#00f2fe',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    fontSize: '0.72rem',
+                                    padding: 0
+                                  }}
+                                >
+                                  <RefreshCw size={11} /> Actualizar
+                                </button>
+                              </div>
+                              <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', margin: 0, flexShrink: 0 }}>
+                                Selecciona un recorrido de operador para ver su caminata y paradas en el mapa.
+                              </p>
+                              
+                              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.55rem', marginTop: '0.2rem' }}>
+                                {(() => {
+                                  // Generar listado unificado de jornadas de operarios (tracks y lecturas)
+                                  const list = [];
+                                  
+                                  // 1. Agregar desde los recorridos GPS existentes
+                                  mobileTracks.forEach(t => {
+                                    const dateStr = new Date(t.timestamp).toDateString();
+                                    list.push({
+                                      id: t.id,
+                                      usuario: t.usuario || 'admin',
+                                      timestamp: t.timestamp,
+                                      dateStr,
+                                      hasTrack: true,
+                                      pointsCount: t.recorrido ? t.recorrido.length : 0
+                                    });
+                                  });
+
+                                  // 2. Agregar desde las lecturas de campo que no tengan track directo
+                                  mobileReadings.forEach(r => {
+                                    const dateStr = new Date(r.timestamp).toDateString();
+                                    const match = list.find(item => item.usuario === r.usuario && item.dateStr === dateStr);
+                                    if (!match) {
+                                      list.push({
+                                        id: `readings-${r.usuario || 'admin'}-${r.timestamp}`,
+                                        usuario: r.usuario || 'admin',
+                                        timestamp: r.timestamp,
+                                        dateStr,
+                                        hasTrack: false,
+                                        pointsCount: 0
+                                      });
+                                    }
+                                  });
+
+                                  // Ordenar por fecha más reciente
+                                  list.sort((a, b) => b.timestamp - a.timestamp);
+
+                                  if (list.length === 0) {
+                                    return <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontStyle: 'italic', textAlign: 'center', marginTop: '2rem' }}>No hay recorridos sincronizados en la nube.</div>;
+                                  }
+
+                                  return list.map(jornada => {
+                                    const date = new Date(jornada.timestamp);
+                                    const formattedDate = date.toLocaleString('es-ES', {
+                                      day: 'numeric',
+                                      month: 'short',
+                                      hour: '2-digit',
+                                      minute: '2-digit'
+                                    });
+                                    
+                                    // Buscar cuántas lecturas tiene esta jornada
+                                    const readingsCount = mobileReadings.filter(r => 
+                                      r.usuario === jornada.usuario && 
+                                      new Date(r.timestamp).toDateString() === jornada.dateStr
+                                    ).length;
+
+                                    return (
+                                      <button
+                                        key={jornada.id}
+                                        onClick={() => {
+                                          setSelectedTrackId(jornada.id);
+                                          setPlaybackIndex(0);
+                                          setIsPlaying(false);
+                                        }}
+                                        style={{
+                                          display: 'flex',
+                                          flexDirection: 'column',
+                                          background: 'rgba(255,255,255,0.03)',
+                                          border: '1px solid var(--border-light)',
+                                          borderRadius: '6px',
+                                          padding: '0.6rem 0.8rem',
+                                          alignItems: 'flex-start',
+                                          width: '100%',
+                                          cursor: 'pointer',
+                                          textAlign: 'left',
+                                          transition: 'all 0.2s ease',
+                                          gap: '0.2rem'
+                                        }}
+                                        onMouseEnter={(e) => e.currentTarget.style.borderColor = '#00f2fe'}
+                                        onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-light)'}
+                                      >
+                                        <span style={{ color: '#fff', fontSize: '0.8rem', fontWeight: 'bold' }}>Usuario: {jornada.usuario}</span>
+                                        <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>Sincronizado: {formattedDate}</span>
+                                        <div style={{ display: 'flex', gap: '0.45rem', fontSize: '0.7rem', fontWeight: 600, marginTop: '0.15rem' }}>
+                                          <span style={{ color: '#00f2fe' }}>
+                                            {jornada.hasTrack ? `${jornada.pointsCount} puntos GPS` : 'Recorrido simulado'}
+                                          </span>
+                                          <span style={{ color: 'rgba(255,255,255,0.45)' }}>·</span>
+                                          <span style={{ color: '#ff9100' }}>
+                                            {readingsCount} lecturas
+                                          </span>
+                                        </div>
+                                      </button>
+                                    );
+                                  });
+                                })()}
+                              </div>
+                            </div>
+                          )
+                        ) : selectedLotInfo ? (
                           (() => {
                             const props = selectedLotInfo.properties || {};
                             const lote = props.NOMBRELOTE || props.nombrelote || props['NOMBRE LOT'] || props.lote || props.LOTE || props.name || props.id || 'N/A';

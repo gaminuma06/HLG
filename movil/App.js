@@ -132,22 +132,31 @@ export default function App() {
     }
 
     setLoadingAuth(true);
+    
+    // Lista de usuarios y contraseñas locales (fallback offline)
+    const localUsers = {
+      "admin": "hlg2026#",
+      "sanidad1": "sanidad2026#",
+      "cosecha1": "cosecha2026#"
+    };
+
     try {
-      // Intentar validar contra Firebase
-      const response = await fetch(`${FIREBASE_DB_URL}/admin_auth.json`);
+      // Intentar validar contra Firebase usando la lista en Realtime Database
+      const response = await fetch(`${FIREBASE_DB_URL}/registros/usuarios.json`);
       let authenticated = false;
+      const typedUser = username.trim();
       
       if (response.ok) {
-        const dbAuth = await response.json();
-        const expectedUser = dbAuth?.username || 'admin';
-        const expectedPass = dbAuth?.password || 'hlg2026#';
-
-        if (username.trim() === expectedUser && password === expectedPass) {
-          authenticated = true;
+        const usersList = await response.json();
+        if (usersList && usersList[typedUser]) {
+          const uData = usersList[typedUser];
+          if (uData.password === password) {
+            authenticated = true;
+          }
         }
       } else {
-        // Fallback local si la petición falla (ej. offline)
-        if (username.trim() === 'admin' && password === 'hlg2026#') {
+        // Fallback local si la petición falla pero hay respuesta del servidor
+        if (localUsers[typedUser] === password) {
           authenticated = true;
         }
       }
@@ -155,6 +164,7 @@ export default function App() {
       if (authenticated) {
         setIsLoggedIn(true);
         await AsyncStorage.setItem('@is_logged_in', 'true');
+        await AsyncStorage.setItem('@logged_user', typedUser);
         
         // Activar rastreo GPS en segundo plano inmediatamente después del login
         await startLocationTracking();
@@ -163,10 +173,12 @@ export default function App() {
       }
     } catch (err) {
       console.error(err);
-      // Fallback local en caso de error de red completo
-      if (username.trim() === 'admin' && password === 'hlg2026#') {
+      // Fallback local en caso de error de red completo (offline total)
+      const typedUser = username.trim();
+      if (localUsers[typedUser] === password) {
         setIsLoggedIn(true);
         await AsyncStorage.setItem('@is_logged_in', 'true');
+        await AsyncStorage.setItem('@logged_user', typedUser);
         await startLocationTracking();
       } else {
         Alert.alert("Error de conexión", "No se pudo contactar al servidor. Revisa tu internet.");
@@ -265,6 +277,7 @@ export default function App() {
       }
 
       // Crear nuevo registro de formulario
+      const loggedUser = await AsyncStorage.getItem('@logged_user') || 'admin';
       const formRecord = {
         id: `form-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         finca,
@@ -274,6 +287,7 @@ export default function App() {
         palma: palma.trim(),
         observacion: observacion.trim(),
         gps: currentCoords,
+        usuario: loggedUser,
         timestamp: Date.now()
       };
 
@@ -342,12 +356,14 @@ export default function App() {
       const track = trackStr ? JSON.parse(trackStr) : [];
 
       if (track.length > 0) {
+        const loggedUser = await AsyncStorage.getItem('@logged_user') || 'admin';
         // Para no saturar con miles de requests, subimos el recorrido completo bajo un ID único por jornada
         const trackId = `track-${Date.now()}`;
         await fetch(`${FIREBASE_DB_URL}/campo_recorridos/${trackId}.json`, {
           method: 'PUT',
           body: JSON.stringify({
             id: trackId,
+            usuario: loggedUser,
             timestamp: Date.now(),
             recorrido: track
           })
