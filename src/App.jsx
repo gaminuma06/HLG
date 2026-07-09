@@ -782,6 +782,7 @@ function App() {
   const [activeFormIndexEdit, setActiveFormIndexEdit] = useState(null);
   const [customAreaName, setCustomAreaName] = useState('');
   const [showCustomAreaInput, setShowCustomAreaInput] = useState(false);
+  const [optionsInputs, setOptionsInputs] = useState({});
   const [loginUser, setLoginUser] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState(null);
@@ -8658,6 +8659,7 @@ function App() {
                                     <option value="text">Texto</option>
                                     <option value="number">Número</option>
                                     <option value="select">Selección Desplegable</option>
+                                    <option value="checkbox">Casilla de Verificación (Check)</option>
                                     <option value="textarea">Área de Texto (Comentario)</option>
                                   </select>
                                 </div>
