@@ -584,12 +584,14 @@ export default function App() {
 
   // Sincronizar todos los datos acumulados con Firebase Cloud
   const handleSyncData = async () => {
+    if (pendingFormsCount === 0 && pendingGpsCount === 0) {
+      Alert.alert("Sin datos", "No tienes datos pendientes por sincronizar en este momento.");
+      return;
+    }
+
     setSyncing(true);
     try {
       const loggedUser = await AsyncStorage.getItem('@logged_user') || 'admin';
-      
-      // Intentar descargar la última configuración de formularios asignados
-      await syncAssignedFormsFromServer(loggedUser);
 
       // 1. Sincronizar Formularios de Campo
       const formsStr = await AsyncStorage.getItem('@forms_data');
@@ -621,15 +623,11 @@ export default function App() {
         });
       }
 
-      // Limpiar AsyncStorage local si hubo envíos
-      if (forms.length > 0) {
-        await AsyncStorage.setItem('@forms_data', JSON.stringify([]));
-      }
-      if (track.length > 0) {
-        await AsyncStorage.setItem('@gps_track', JSON.stringify([]));
-      }
+      // Limpiar AsyncStorage local
+      await AsyncStorage.setItem('@forms_data', JSON.stringify([]));
+      await AsyncStorage.setItem('@gps_track', JSON.stringify([]));
 
-      Alert.alert("Sincronización Exitosa", "Toda la información del día y los formularios se han actualizado con éxito.");
+      Alert.alert("Sincronización Exitosa", "Toda la información del día ha sido sincronizada con éxito.");
       updateLocalStats();
     } catch (err) {
       console.error("Error al sincronizar con Firebase:", err);
@@ -999,6 +997,10 @@ export default function App() {
               <View style={styles.syncRow}>
                 <Text style={styles.syncLabel}>Información del día:</Text>
                 <Text style={styles.syncValue}>{pendingGpsCount}</Text>
+              </View>
+              <View style={[styles.syncRow, { marginTop: 10 }]}>
+                <Text style={styles.syncLabel}>Datos de formulario:</Text>
+                <Text style={styles.syncValue}>{pendingFormsCount}</Text>
               </View>
             </View>
 
