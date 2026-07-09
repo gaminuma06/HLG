@@ -784,8 +784,15 @@ function App() {
   const [showCustomAreaInput, setShowCustomAreaInput] = useState(false);
   const [optionsInputs, setOptionsInputs] = useState({});
   const [adminToast, setAdminToast] = useState(null); // { message: '', type: 'success' }
-  const [adminRole, setAdminRole] = useState(() => sessionStorage.getItem('adminRole') || null);
+  const [adminRole, setAdminRole] = useState(() => {
+    const role = sessionStorage.getItem('adminRole');
+    if (!role && sessionStorage.getItem('isAdminLoggedIn') === 'true') {
+      return 'admin';
+    }
+    return role || null;
+  });
   const [adminArea, setAdminArea] = useState(() => sessionStorage.getItem('adminArea') || null);
+  const [loggedAdminUser, setLoggedAdminUser] = useState(() => sessionStorage.getItem('loggedAdminUser') || '');
   const [adminAreasList, setAdminAreasList] = useState(["Sanidad", "Cosecha", "Riego", "Otros"]);
   const [userToDeleteTotal, setUserToDeleteTotal] = useState(null);
   const [deleteTotalConfirmInput, setDeleteTotalConfirmInput] = useState('');
@@ -2002,10 +2009,12 @@ function App() {
         setIsAdminLoggedIn(true);
         setAdminRole(role);
         setAdminArea(area);
+        setLoggedAdminUser(loginUser.trim().toLowerCase());
         
         sessionStorage.setItem('isAdminLoggedIn', 'true');
         sessionStorage.setItem('adminRole', role);
         sessionStorage.setItem('adminArea', area || '');
+        sessionStorage.setItem('loggedAdminUser', loginUser.trim().toLowerCase());
 
         setShowLoginModal(false);
         if (loginTarget === 'admin') {
@@ -2026,9 +2035,11 @@ function App() {
         setIsAdminLoggedIn(true);
         setAdminRole('admin');
         setAdminArea(null);
+        setLoggedAdminUser('admin');
         sessionStorage.setItem('isAdminLoggedIn', 'true');
         sessionStorage.setItem('adminRole', 'admin');
         sessionStorage.setItem('adminArea', '');
+        sessionStorage.setItem('loggedAdminUser', 'admin');
         setShowLoginModal(false);
         if (loginTarget === 'admin') {
           loadAdminData();
@@ -8287,26 +8298,57 @@ function App() {
               <ShieldCheck size={28} />
               Parametrización de campo
             </h2>
-            <button 
-              onClick={() => setAdminPanelOpen(false)} 
-              style={{
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid var(--border-light)',
-                borderRadius: '50%',
-                width: '40px',
-                height: '40px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                color: 'var(--text-main)',
-                transition: 'var(--transition-fast)'
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 75, 75, 0.1)'}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
-            >
-              <X size={20} />
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '0.9rem' }}>
+                <span style={{ color: 'var(--text-muted)' }}>
+                  Usuario: <strong style={{ color: 'var(--accent)' }}>{loggedAdminUser || 'admin'}</strong>
+                </span>
+                <button
+                  onClick={() => {
+                    setIsAdminLoggedIn(false);
+                    setAdminRole(null);
+                    setAdminArea(null);
+                    setLoggedAdminUser('');
+                    sessionStorage.removeItem('isAdminLoggedIn');
+                    sessionStorage.removeItem('adminRole');
+                    sessionStorage.removeItem('adminArea');
+                    sessionStorage.removeItem('loggedAdminUser');
+                    setAdminPanelOpen(false);
+                    setSettingsOpen(false);
+                  }}
+                  className="btn btn-secondary"
+                  style={{ 
+                    padding: '0.35rem 0.75rem', 
+                    fontSize: '0.8rem', 
+                    borderColor: 'rgba(255, 75, 75, 0.25)', 
+                    color: 'var(--danger)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cerrar Sesión
+                </button>
+              </div>
+              <button 
+                onClick={() => setAdminPanelOpen(false)} 
+                style={{
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid var(--border-light)',
+                  borderRadius: '50%',
+                  width: '40px',
+                  height: '40px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: 'var(--text-main)',
+                  transition: 'var(--transition-fast)'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 75, 75, 0.1)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
+              >
+                <X size={20} />
+              </button>
+            </div>
           </div>
 
           {/* Body container con Tab Sidebar */}
@@ -8485,6 +8527,7 @@ function App() {
                             // Jefes solo ven operarios de su propia área
                             return uinfo.area === adminArea && uinfo.role !== 'admin' && uinfo.role !== 'jefe';
                           })
+                          .sort((a, b) => a[0].localeCompare(b[0]))
                           .map(([uname, uinfo]) => {
                             const isInactive = uinfo.status && uinfo.status !== 'activo';
                             const isRequestedDelete = uinfo.status === 'solicitado_eliminar';
