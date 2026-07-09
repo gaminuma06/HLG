@@ -196,6 +196,11 @@ export default function App() {
       if (response.ok) {
         const uData = await response.json();
         if (uData && uData.password === password) {
+          if (uData.status === 'solicitado_eliminar' || uData.status === 'eliminando') {
+            Alert.alert("Acceso Denegado", "Su usuario ha sido inhabilitado para el trabajo de campo por su supervisor.");
+            setLoadingAuth(false);
+            return;
+          }
           authenticated = true;
           userArea = uData.area || '';
         }

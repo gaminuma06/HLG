@@ -784,6 +784,11 @@ function App() {
   const [showCustomAreaInput, setShowCustomAreaInput] = useState(false);
   const [optionsInputs, setOptionsInputs] = useState({});
   const [adminToast, setAdminToast] = useState(null); // { message: '', type: 'success' }
+  const [adminRole, setAdminRole] = useState(() => sessionStorage.getItem('adminRole') || null);
+  const [adminArea, setAdminArea] = useState(() => sessionStorage.getItem('adminArea') || null);
+  const [adminAreasList, setAdminAreasList] = useState(["Sanidad", "Cosecha", "Riego", "Otros"]);
+  const [userToDeleteTotal, setUserToDeleteTotal] = useState(null);
+  const [deleteTotalConfirmInput, setDeleteTotalConfirmInput] = useState('');
   const showAdminToast = (msg, type = 'success') => {
     setAdminToast({ message: msg, type });
     setTimeout(() => {
@@ -1951,9 +1956,57 @@ function App() {
       const expectedUser = fbCreds?.username || 'admin';
       const expectedPassword = fbCreds?.password || 'hlg2026#';
 
+      let authenticated = false;
+      let role = null;
+      let area = null;
+
       if (loginUser === expectedUser && loginPassword === expectedPassword) {
+        authenticated = true;
+        role = 'admin';
+        area = null;
+      } else {
+        // Consultar el perfil del usuario en Firebase para validar rol de jefe
+        try {
+          const userRes = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/usuarios/' + loginUser.trim().toLowerCase() + '.json');
+          if (userRes.ok) {
+            const uData = await userRes.json();
+            if (uData && uData.password === loginPassword && uData.role === 'jefe') {
+              authenticated = true;
+              role = 'jefe';
+              area = uData.area || '';
+            }
+          }
+        } catch (e) {
+          console.warn("Error consultando usuario en Firebase:", e);
+        }
+      }
+
+      // Fallback local básico
+      if (!authenticated) {
+        if (loginUser === 'admin' && loginPassword === 'hlg2026#') {
+          authenticated = true;
+          role = 'admin';
+          area = null;
+        } else if (loginUser === 'jefe_sanidad' && loginPassword === 'sanidad2026#') {
+          authenticated = true;
+          role = 'jefe';
+          area = 'Sanidad';
+        } else if (loginUser === 'jefe_cosecha' && loginPassword === 'cosecha2026#') {
+          authenticated = true;
+          role = 'jefe';
+          area = 'Cosecha';
+        }
+      }
+
+      if (authenticated) {
         setIsAdminLoggedIn(true);
+        setAdminRole(role);
+        setAdminArea(area);
+        
         sessionStorage.setItem('isAdminLoggedIn', 'true');
+        sessionStorage.setItem('adminRole', role);
+        sessionStorage.setItem('adminArea', area || '');
+
         setShowLoginModal(false);
         if (loginTarget === 'admin') {
           loadAdminData();
@@ -1964,14 +2017,18 @@ function App() {
         setLoginUser('');
         setLoginPassword('');
       } else {
-        setLoginError("Usuario o contraseña incorrectos.");
+        setLoginError("Usuario o contraseña incorrectos, o no posee privilegios de administración.");
       }
     } catch (err) {
       console.error("Error en login:", err);
       // Fallback local en caso de error de conexión
       if (loginUser === 'admin' && loginPassword === 'hlg2026#') {
         setIsAdminLoggedIn(true);
+        setAdminRole('admin');
+        setAdminArea(null);
         sessionStorage.setItem('isAdminLoggedIn', 'true');
+        sessionStorage.setItem('adminRole', 'admin');
+        sessionStorage.setItem('adminArea', '');
         setShowLoginModal(false);
         if (loginTarget === 'admin') {
           loadAdminData();
@@ -2016,7 +2073,7 @@ function App() {
     }
   };
 
-  // Cargar datos de usuarios y formularios desde Firebase
+  // Cargar datos de usuarios, formularios y lista de áreas desde Firebase
   const loadAdminData = async () => {
     try {
       const usersRes = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/usuarios.json');
@@ -2024,13 +2081,30 @@ function App() {
         const uData = await usersRes.json();
         setAdminUsers(uData || {});
       }
+      
+      const areasRes = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/areas.json');
+      if (areasRes.ok) {
+        const aData = await areasRes.json();
+        if (Array.isArray(aData)) {
+          setAdminAreasList(aData);
+        }
+      }
+
       const formsRes = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/configuracion_formularios.json');
       if (formsRes.ok) {
         const fData = await formsRes.json();
         setAdminFormularios(fData || {});
         if (fData) {
           const keys = Object.keys(fData);
-          if (keys.length > 0) setSelectedAreaEdit(keys[0]);
+          if (keys.length > 0) {
+            const userRole = sessionStorage.getItem('adminRole');
+            const userArea = sessionStorage.getItem('adminArea');
+            if (userRole === 'jefe' && userArea) {
+              setSelectedAreaEdit(userArea);
+            } else {
+              setSelectedAreaEdit(keys[0]);
+            }
+          }
         }
       }
     } catch (err) {
@@ -8250,7 +8324,8 @@ function App() {
               {[
                 { id: 'usuarios', label: 'Gestión de Usuarios', icon: <Users size={18} /> },
                 { id: 'formularios', label: 'Creador de Formularios', icon: <Sliders size={18} /> },
-                { id: 'permisos', label: 'Permisos de Formularios', icon: <ShieldCheck size={18} /> }
+                { id: 'permisos', label: 'Permisos de Formularios', icon: <ShieldCheck size={18} /> },
+                ...(adminRole === 'admin' ? [{ id: 'areas', label: 'Gestión de Áreas', icon: <Plus size={18} /> }] : [])
               ].map(tab => (
                 <button
                   key={tab.id}
@@ -8299,7 +8374,10 @@ function App() {
                     <form onSubmit={(e) => {
                       e.preventDefault();
                       const uname = newUsername.trim().toLowerCase();
-                      if (!uname || !newPassword || !newArea) {
+                      const areaToSave = adminRole === 'jefe' ? adminArea : newArea;
+                      const roleToSave = adminRole === 'jefe' ? 'operario' : (e.target.newUserRole?.value || 'operario');
+
+                      if (!uname || !newPassword || !areaToSave) {
                         showAdminToast("Por favor llena todos los campos.", "error");
                         return;
                       }
@@ -8307,14 +8385,22 @@ function App() {
                         showAdminToast("Este usuario ya existe.", "error");
                         return;
                       }
-                      const updated = { ...adminUsers, [uname]: { password: newPassword, area: newArea } };
+                      const updated = { 
+                        ...adminUsers, 
+                        [uname]: { 
+                          password: newPassword, 
+                          area: areaToSave, 
+                          role: roleToSave,
+                          status: 'activo'
+                        } 
+                      };
                       saveAdminUsers(updated);
                       setNewUsername('');
                       setNewPassword('');
                     }} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                       
                       <div className="filter-group" style={{ margin: 0 }}>
-                        <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Nombre de Usuario (Operario)</label>
+                        <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Nombre de Usuario</label>
                         <input
                           type="text"
                           required
@@ -8343,16 +8429,34 @@ function App() {
                         <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Área de Trabajo</label>
                         <select
                           className="select-control"
-                          value={newArea}
+                          value={adminRole === 'jefe' ? adminArea : newArea}
                           onChange={(e) => setNewArea(e.target.value)}
+                          disabled={adminRole === 'jefe'}
                           style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem', width: '100%', background: 'var(--bg-input)' }}
                         >
-                          <option value="Sanidad">Sanidad</option>
-                          <option value="Cosecha">Cosecha</option>
-                          <option value="Riego">Riego</option>
-                          <option value="Otros">Otros</option>
+                          {adminRole === 'jefe' ? (
+                            <option value={adminArea}>{adminArea}</option>
+                          ) : (
+                            adminAreasList.map(areaOpt => (
+                              <option key={areaOpt} value={areaOpt}>{areaOpt}</option>
+                            ))
+                          )}
                         </select>
                       </div>
+
+                      {adminRole === 'admin' && (
+                        <div className="filter-group" style={{ margin: 0 }}>
+                          <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Rol de Usuario</label>
+                          <select
+                            name="newUserRole"
+                            className="select-control"
+                            style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem', width: '100%', background: 'var(--bg-input)' }}
+                          >
+                            <option value="operario">Operario</option>
+                            <option value="jefe">Jefe de Área</option>
+                          </select>
+                        </div>
+                      )}
 
                       <button type="submit" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', marginTop: '0.5rem' }}>
                         Crear Usuario
@@ -8375,63 +8479,180 @@ function App() {
                         </tr>
                       </thead>
                       <tbody>
-                        {Object.entries(adminUsers).map(([uname, uinfo]) => (
-                          <tr key={uname} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                            <td style={{ padding: '0.75rem', fontWeight: 600 }}>{uname}</td>
-                            <td style={{ padding: '0.75rem' }}>
-                              <input 
-                                type="text"
-                                className="select-control"
-                                value={uinfo.password}
-                                onChange={(e) => {
-                                  const updated = { ...adminUsers, [uname]: { ...uinfo, password: e.target.value } };
-                                  setAdminUsers(updated);
+                        {Object.entries(adminUsers)
+                          .filter(([uname, uinfo]) => {
+                            if (adminRole === 'admin') return true;
+                            // Jefes solo ven operarios de su propia área
+                            return uinfo.area === adminArea && uinfo.role !== 'admin' && uinfo.role !== 'jefe';
+                          })
+                          .map(([uname, uinfo]) => {
+                            const isInactive = uinfo.status && uinfo.status !== 'activo';
+                            const isRequestedDelete = uinfo.status === 'solicitado_eliminar';
+                            const isEliminating = uinfo.status === 'eliminando';
+                            
+                            let daysLeft = 90;
+                            if (isEliminating && uinfo.deletion_start_date) {
+                              const diffMs = Date.now() - uinfo.deletion_start_date;
+                              daysLeft = 90 - Math.floor(diffMs / (24 * 60 * 60 * 1000));
+                              if (daysLeft < 0) daysLeft = 0;
+                            }
+
+                            return (
+                              <tr 
+                                key={uname} 
+                                style={{ 
+                                  borderBottom: '1px solid var(--border-light)', 
+                                  opacity: isInactive ? 0.45 : 1, 
+                                  transition: 'opacity 0.25s ease' 
                                 }}
-                                onBlur={() => saveAdminUsers(adminUsers)}
-                                style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', background: 'transparent', border: '1px dashed var(--border-light)', width: '150px' }}
-                              />
-                            </td>
-                            <td style={{ padding: '0.75rem' }}>
-                              {uname === 'admin' ? (
-                                <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Administrador General</span>
-                              ) : (
-                                <select
-                                  className="select-control"
-                                  value={uinfo.area || ''}
-                                  onChange={(e) => {
-                                    const updated = { ...adminUsers, [uname]: { ...uinfo, area: e.target.value } };
-                                    setAdminUsers(updated);
-                                    saveAdminUsers(updated);
-                                  }}
-                                  style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', background: 'var(--bg-input)' }}
-                                >
-                                  <option value="Sanidad">Sanidad</option>
-                                  <option value="Cosecha">Cosecha</option>
-                                  <option value="Riego">Riego</option>
-                                  <option value="Otros">Otros</option>
-                                </select>
-                              )}
-                            </td>
-                            <td style={{ padding: '0.75rem', textAlign: 'right' }}>
-                              <button 
-                                className="btn btn-secondary" 
-                                onClick={() => {
-                                  if (uname === 'admin') return showAdminToast("No puedes borrar el administrador.", "error");
-                                  if (confirm('¿Borrar usuario ' + uname + '?')) {
-                                    const next = { ...adminUsers };
-                                    delete next[uname];
-                                    saveAdminUsers(next);
-                                  }
-                                }}
-                                disabled={uname === 'admin'}
-                                style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: 'var(--danger)', borderColor: 'rgba(255,75,75,0.2)' }}
                               >
-                                <Trash2 size={12} />
-                                Eliminar
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
+                                <td style={{ padding: '0.75rem', fontWeight: 600 }}>
+                                  {uname}
+                                  {isRequestedDelete && (
+                                    <span style={{ fontSize: '0.7rem', color: 'orange', display: 'block', fontWeight: 500 }}>
+                                      (Baja solicitada por supervisor)
+                                    </span>
+                                  )}
+                                  {isEliminating && (
+                                    <span style={{ fontSize: '0.7rem', color: 'red', display: 'block', fontWeight: 500 }}>
+                                      (Eliminación en {daysLeft} días)
+                                    </span>
+                                  )}
+                                </td>
+                                <td style={{ padding: '0.75rem' }}>
+                                  <input 
+                                    type="text"
+                                    className="select-control"
+                                    value={uinfo.password}
+                                    onChange={(e) => {
+                                      const updated = { ...adminUsers, [uname]: { ...uinfo, password: e.target.value } };
+                                      setAdminUsers(updated);
+                                    }}
+                                    onBlur={() => saveAdminUsers(adminUsers)}
+                                    disabled={isInactive}
+                                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', background: 'transparent', border: '1px dashed var(--border-light)', width: '150px' }}
+                                  />
+                                </td>
+                                <td style={{ padding: '0.75rem' }}>
+                                  {uname === 'admin' ? (
+                                    <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Administrador General</span>
+                                  ) : (
+                                    <div>
+                                      <select
+                                        className="select-control"
+                                        value={uinfo.area || ''}
+                                        onChange={(e) => {
+                                          const updated = { ...adminUsers, [uname]: { ...uinfo, area: e.target.value } };
+                                          setAdminUsers(updated);
+                                          saveAdminUsers(updated);
+                                        }}
+                                        disabled={adminRole === 'jefe' || isInactive}
+                                        style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', background: 'var(--bg-input)' }}
+                                      >
+                                        {adminAreasList.map(areaOpt => (
+                                          <option key={areaOpt} value={areaOpt}>{areaOpt}</option>
+                                        ))}
+                                      </select>
+                                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginTop: '0.25rem' }}>
+                                        {uinfo.role === 'jefe' ? 'Jefe de Área' : 'Operario'}
+                                      </span>
+                                    </div>
+                                  )}
+                                </td>
+                                <td style={{ padding: '0.75rem', textAlign: 'right' }}>
+                                  <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', alignItems: 'center' }}>
+                                    {/* Caso 1: Usuario activo normal */}
+                                    {!isInactive && uname !== 'admin' && (
+                                      <button 
+                                        className="btn btn-secondary" 
+                                        onClick={() => {
+                                          const nextStatus = adminRole === 'admin' ? 'eliminando' : 'solicitado_eliminar';
+                                          const updated = { 
+                                            ...adminUsers, 
+                                            [uname]: { 
+                                              ...uinfo, 
+                                              status: nextStatus,
+                                              deletion_start_date: adminRole === 'admin' ? Date.now() : null
+                                            } 
+                                          };
+                                          saveAdminUsers(updated);
+                                          showAdminToast(adminRole === 'admin' ? "Baja aprobada. Iniciado conteo de 90 días." : "Baja de operario solicitada.");
+                                        }}
+                                        style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: 'var(--danger)', borderColor: 'rgba(255,75,75,0.2)' }}
+                                      >
+                                        <Trash2 size={12} />
+                                        Eliminar
+                                      </button>
+                                    )}
+
+                                    {/* Caso 2: Baja solicitada por Jefe */}
+                                    {isRequestedDelete && (
+                                      <>
+                                        {adminRole === 'admin' && (
+                                          <button 
+                                            className="btn btn-primary" 
+                                            onClick={() => {
+                                              const updated = { 
+                                                ...adminUsers, 
+                                                [uname]: { 
+                                                  ...uinfo, 
+                                                  status: 'eliminando',
+                                                  deletion_start_date: Date.now()
+                                                } 
+                                              };
+                                              saveAdminUsers(updated);
+                                              showAdminToast("Baja aceptada. Iniciada cuenta regresiva de 90 días.");
+                                            }}
+                                            style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem' }}
+                                          >
+                                            Aceptar eliminación de usuario
+                                          </button>
+                                        )}
+                                        <button 
+                                          className="btn btn-secondary" 
+                                          onClick={() => {
+                                            const updated = { ...adminUsers, [uname]: { ...uinfo, status: 'activo' } };
+                                            saveAdminUsers(updated);
+                                            showAdminToast("Operario reactivado correctamente.");
+                                          }}
+                                          style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: 'var(--accent)', borderColor: 'rgba(0, 242, 254, 0.2)' }}
+                                        >
+                                          Reactivar
+                                        </button>
+                                      </>
+                                    )}
+
+                                    {/* Caso 3: Eliminando (Cuenta regresiva activa) */}
+                                    {isEliminating && (
+                                      <>
+                                        <button 
+                                          className="btn btn-secondary" 
+                                          onClick={() => {
+                                            const updated = { ...adminUsers, [uname]: { ...uinfo, status: 'activo' } };
+                                            saveAdminUsers(updated);
+                                            showAdminToast("Operario reactivado correctamente.");
+                                          }}
+                                          style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: 'var(--accent)', borderColor: 'rgba(0, 242, 254, 0.2)' }}
+                                        >
+                                          Reactivar
+                                        </button>
+                                        
+                                        {adminRole === 'admin' && (
+                                          <button 
+                                            className="btn btn-secondary" 
+                                            onClick={() => setUserToDeleteTotal(uname)}
+                                            style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: 'var(--danger)', borderColor: 'rgba(255,75,75,0.2)' }}
+                                          >
+                                            Eliminación Total
+                                          </button>
+                                        )}
+                                      </>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
                       </tbody>
                     </table>
                   </div>
@@ -8449,20 +8670,14 @@ function App() {
                         className="select-control"
                         value={selectedAreaEdit}
                         onChange={(e) => {
-                          if (e.target.value === '__new__') {
-                            setShowCustomAreaInput(true);
-                          } else {
-                            setShowCustomAreaInput(false);
-                            setSelectedAreaEdit(e.target.value);
-                            setActiveFormIndexEdit(null);
-                          }
+                          setSelectedAreaEdit(e.target.value);
+                          setActiveFormIndexEdit(null);
                         }}
                         style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem', width: '100%', background: 'var(--bg-input)' }}
                       >
-                        {Object.keys(adminFormularios).map(area => (
+                        {adminAreasList.map(area => (
                           <option key={area} value={area}>{area}</option>
                         ))}
-                        <option value="__new__">+ Crear Nueva Área...</option>
                       </select>
                     </div>
 
@@ -8498,35 +8713,37 @@ function App() {
                     )}
 
                     <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
-                      <button 
-                        className="btn btn-primary"
-                        onClick={() => {
-                          const areaForms = adminFormularios[selectedAreaEdit]?.formularios || [];
-                          const newFormObj = {
-                            id: 'form_' + selectedAreaEdit.toLowerCase() + '_' + Date.now(),
-                            titulo: 'Nuevo Formulario ' + selectedAreaEdit,
-                            labels: {
-                              iniciar: 'Iniciar Labor',
-                              finalizar: 'Finalizar Labor'
-                            },
-                            fields: [
-                              { id: 'finca', label: 'Finca', type: 'select', options: ['Finca 01', 'Finca 02'], pinned: true, required: true },
-                              { id: 'lote', label: 'Lote', type: 'text', pinned: true, required: true }
-                            ]
-                          };
-                          const updated = {
-                            ...adminFormularios,
-                            [selectedAreaEdit]: {
-                              formularios: [...areaForms, newFormObj]
-                            }
-                          };
-                          setAdminFormularios(updated);
-                          setActiveFormIndexEdit(areaForms.length);
-                        }}
-                      >
-                        <Plus size={16} />
-                        Crear Nuevo Formulario en {selectedAreaEdit}
-                      </button>
+                      {(adminRole === 'admin' || (adminRole === 'jefe' && selectedAreaEdit === adminArea)) && (
+                        <button 
+                          className="btn btn-primary"
+                          onClick={() => {
+                            const areaForms = adminFormularios[selectedAreaEdit]?.formularios || [];
+                            const newFormObj = {
+                              id: 'form_' + selectedAreaEdit.toLowerCase() + '_' + Date.now(),
+                              titulo: 'Nuevo Formulario ' + selectedAreaEdit,
+                              labels: {
+                                iniciar: 'Iniciar Labor',
+                                finalizar: 'Finalizar Labor'
+                              },
+                              fields: [
+                                { id: 'finca', label: 'Finca', type: 'select', options: ['Finca 01', 'Finca 02'], pinned: true, required: true },
+                                { id: 'lote', label: 'Lote', type: 'text', pinned: true, required: true }
+                              ]
+                            };
+                            const updated = {
+                              ...adminFormularios,
+                              [selectedAreaEdit]: {
+                                formularios: [...areaForms, newFormObj]
+                              }
+                            };
+                            setAdminFormularios(updated);
+                            setActiveFormIndexEdit(areaForms.length);
+                          }}
+                        >
+                          <Plus size={16} />
+                          Crear Nuevo Formulario en {selectedAreaEdit}
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -8568,11 +8785,33 @@ function App() {
                     </div>
 
                     {/* Editor del Formulario Seleccionado */}
-                    {activeFormIndexEdit !== null && adminFormularios[selectedAreaEdit]?.formularios?.[activeFormIndexEdit] && (
-                      <div className="glass-panel" style={{ flex: 2, padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                        
-                        {/* Datos Básicos */}
-                        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                    {activeFormIndexEdit !== null && adminFormularios[selectedAreaEdit]?.formularios?.[activeFormIndexEdit] && (() => {
+                      const isEditable = adminRole === 'admin' || (adminRole === 'jefe' && selectedAreaEdit === adminArea);
+                      
+                      return (
+                        <div className="glass-panel" style={{ flex: 2, padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                          
+                          {/* Banner de solo lectura para Jefes */}
+                          {!isEditable && (
+                            <div style={{
+                              background: 'rgba(255, 170, 0, 0.1)',
+                              border: '1px solid rgba(255, 170, 0, 0.3)',
+                              color: 'orange',
+                              padding: '0.75rem 1rem',
+                              borderRadius: 'var(--radius-sm)',
+                              fontSize: '0.85rem',
+                              fontWeight: 600,
+                              marginBottom: '0.5rem',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.5rem'
+                            }}>
+                              ⚠️ Modo de Solo Lectura. No tienes permisos para modificar formularios de otras áreas.
+                            </div>
+                          )}
+
+                          {/* Datos Básicos */}
+                          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
                           <div className="filter-group" style={{ margin: 0, flex: 2 }}>
                             <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Título del Formulario</label>
                             <input 
@@ -8584,6 +8823,7 @@ function App() {
                                 nextForms[activeFormIndexEdit].titulo = e.target.value;
                                 setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
                               }}
+                              disabled={!isEditable}
                               style={{ padding: '0.5rem 0.75rem', width: '100%' }}
                             />
                           </div>
@@ -8600,6 +8840,7 @@ function App() {
                                 nextForms[activeFormIndexEdit].labels.iniciar = e.target.value;
                                 setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
                               }}
+                              disabled={!isEditable}
                               style={{ padding: '0.5rem 0.75rem', width: '100%' }}
                             />
                           </div>
@@ -8616,6 +8857,7 @@ function App() {
                                 nextForms[activeFormIndexEdit].labels.finalizar = e.target.value;
                                 setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
                               }}
+                              disabled={!isEditable}
                               style={{ padding: '0.5rem 0.75rem', width: '100%' }}
                             />
                           </div>
@@ -8643,6 +8885,7 @@ function App() {
                                       nextForms[activeFormIndexEdit].fields[fIdx].id = e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '_');
                                       setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
                                     }}
+                                    disabled={!isEditable}
                                     style={{ padding: '0.4rem 0.6rem', width: '100%', fontSize: '0.85rem' }}
                                   />
                                 </div>
@@ -8661,6 +8904,7 @@ function App() {
                                       }
                                       setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
                                     }}
+                                    disabled={!isEditable}
                                     style={{ padding: '0.4rem 0.6rem', width: '100%', fontSize: '0.85rem', background: 'var(--bg-input)' }}
                                   >
                                     <option value="text">Texto</option>
@@ -8682,6 +8926,7 @@ function App() {
                                       nextForms[activeFormIndexEdit].fields[fIdx].pinned = e.target.checked;
                                       setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
                                     }}
+                                    disabled={!isEditable}
                                     style={{ width: '18px', height: '18px' }}
                                   />
                                 </div>
@@ -8697,6 +8942,7 @@ function App() {
                                       nextForms[activeFormIndexEdit].fields[fIdx].required = e.target.checked;
                                       setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
                                     }}
+                                    disabled={!isEditable}
                                     style={{ width: '18px', height: '18px' }}
                                   />
                                 </div>
@@ -8708,10 +8954,16 @@ function App() {
                                     <input 
                                       type="text"
                                       className="select-control"
-                                      value={(field.options || []).join(', ')}
+                                      value={optionsInputs[`${selectedAreaEdit}_${activeFormIndexEdit}_${fIdx}`] !== undefined ? optionsInputs[`${selectedAreaEdit}_${activeFormIndexEdit}_${fIdx}`] : (field.options || []).join(', ')}
                                       onChange={(e) => {
+                                        const nextText = e.target.value;
+                                        setOptionsInputs({
+                                          ...optionsInputs,
+                                          [`${selectedAreaEdit}_${activeFormIndexEdit}_${fIdx}`]: nextText
+                                        });
+                                        const parsedOptions = nextText.split(',').map(o => o.trim()).filter(Boolean);
                                         const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
-                                        nextForms[activeFormIndexEdit].fields[fIdx].options = e.target.value.split(',').map(o => o.trim()).filter(Boolean);
+                                        nextForms[activeFormIndexEdit].fields[fIdx].options = parsedOptions;
                                         setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
                                       }}
                                       placeholder="Ej: Finca 01, Finca 02, Finca 03"
@@ -8735,56 +8987,60 @@ function App() {
                               </div>
                             ))}
 
-                            <button 
-                              className="btn btn-secondary"
-                              onClick={() => {
-                                const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
-                                nextForms[activeFormIndexEdit].fields.push({
-                                  id: 'campo_' + Date.now(),
-                                  label: 'Nuevo Campo',
-                                  type: 'text',
-                                  pinned: true,
-                                  required: true
-                                });
-                                setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
-                              }}
-                              style={{ width: 'fit-content', gap: '0.5rem' }}
-                            >
-                              <Plus size={14} />
-                              Agregar Campo al Formulario
-                            </button>
+                            {isEditable && (
+                              <button 
+                                className="btn btn-secondary"
+                                onClick={() => {
+                                  const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                  nextForms[activeFormIndexEdit].fields.push({
+                                    id: 'campo_' + Date.now(),
+                                    label: 'Nuevo Campo',
+                                    type: 'text',
+                                    pinned: true,
+                                    required: true
+                                  });
+                                  setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
+                                }}
+                                style={{ width: 'fit-content', gap: '0.5rem' }}
+                              >
+                                <Plus size={14} />
+                                Agregar Campo al Formulario
+                              </button>
+                            )}
                           </div>
                         </div>
 
                         {/* Guardar / Eliminar Formulario */}
-                        <div style={{ display: 'flex', gap: '1rem', borderTop: '1px solid var(--border-light)', paddingTop: '1.25rem', marginTop: '1rem' }}>
-                          <button 
-                            className="btn btn-primary"
-                            onClick={() => saveAdminFormularios(adminFormularios)}
-                          >
-                            Guardar Cambios de Formulario
-                          </button>
-                          
-                          <button 
-                            className="btn btn-secondary"
-                            onClick={() => {
-                              if (confirm("¿Estás seguro de eliminar todo este formulario?")) {
-                                const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
-                                nextForms.splice(activeFormIndexEdit, 1);
-                                const updated = { ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } };
-                                setAdminFormularios(updated);
-                                saveAdminFormularios(updated);
-                                setActiveFormIndexEdit(null);
-                              }
-                            }}
-                            style={{ color: 'var(--danger)', borderColor: 'rgba(255, 75, 75, 0.2)' }}
-                          >
-                            Eliminar Formulario
-                          </button>
+                        {isEditable && (
+                          <div style={{ display: 'flex', gap: '1rem', borderTop: '1px solid var(--border-light)', paddingTop: '1.25rem', marginTop: '1rem' }}>
+                            <button 
+                              className="btn btn-primary"
+                              onClick={() => saveAdminFormularios(adminFormularios)}
+                            >
+                              Guardar Cambios de Formulario
+                            </button>
+                            
+                            <button 
+                              className="btn btn-secondary"
+                              onClick={() => {
+                                if (confirm("¿Estás seguro de eliminar todo este formulario?")) {
+                                  const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                  nextForms.splice(activeFormIndexEdit, 1);
+                                  const updated = { ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } };
+                                  setAdminFormularios(updated);
+                                  saveAdminFormularios(updated);
+                                  setActiveFormIndexEdit(null);
+                                }
+                              }}
+                              style={{ color: 'var(--danger)', borderColor: 'rgba(255, 75, 75, 0.2)' }}
+                            >
+                              Eliminar Formulario
+                            </button>
+                          </div>
+                        )}
                         </div>
-
-                      </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 </div>
               )}
@@ -8808,34 +9064,41 @@ function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {Object.entries(adminUsers).map(([uname, uinfo]) => {
-                        const formsInArea = adminFormularios[uinfo.area]?.formularios || [];
-                        return (
-                          <tr key={uname} style={{ borderBottom: '1px solid var(--border-light)', verticalAlign: 'top' }}>
-                            <td style={{ padding: '1.25rem 1rem', fontWeight: 600 }}>{uname}</td>
-                            <td style={{ padding: '1rem' }}>
-                              {uname === 'admin' ? (
-                                <span style={{ color: 'var(--accent)', fontWeight: 600, display: 'inline-block', paddingTop: '0.25rem' }}>
-                                  Administrador General (Control Total)
-                                </span>
-                              ) : (
-                                <select
-                                  className="select-control"
-                                  value={uinfo.area || ''}
-                                  onChange={(e) => {
-                                    const updated = { ...adminUsers, [uname]: { ...uinfo, area: e.target.value, formularios_permitidos: {} } };
-                                    setAdminUsers(updated);
-                                    saveAdminUsers(updated);
-                                  }}
-                                  style={{ padding: '0.4rem 0.8rem', background: 'var(--bg-input)', fontSize: '0.85rem' }}
-                                >
-                                  <option value="">-- Sin Área (Rastreo básico) --</option>
-                                  {Object.keys(adminFormularios).map(area => (
-                                    <option key={area} value={area}>{area}</option>
-                                  ))}
-                                </select>
-                              )}
-                            </td>
+                      {Object.entries(adminUsers)
+                        .filter(([uname, uinfo]) => {
+                          if (adminRole === 'admin') return true;
+                          // Jefes solo ven operarios de su propia área
+                          return uinfo.area === adminArea && uinfo.role !== 'admin' && uinfo.role !== 'jefe';
+                        })
+                        .map(([uname, uinfo]) => {
+                          const formsInArea = adminFormularios[uinfo.area]?.formularios || [];
+                          return (
+                            <tr key={uname} style={{ borderBottom: '1px solid var(--border-light)', verticalAlign: 'top' }}>
+                              <td style={{ padding: '1.25rem 1rem', fontWeight: 600 }}>{uname}</td>
+                              <td style={{ padding: '1rem' }}>
+                                {uname === 'admin' ? (
+                                  <span style={{ color: 'var(--accent)', fontWeight: 600, display: 'inline-block', paddingTop: '0.25rem' }}>
+                                    Administrador General (Control Total)
+                                  </span>
+                                ) : (
+                                  <select
+                                    className="select-control"
+                                    value={uinfo.area || ''}
+                                    onChange={(e) => {
+                                      const updated = { ...adminUsers, [uname]: { ...uinfo, area: e.target.value, formularios_permitidos: {} } };
+                                      setAdminUsers(updated);
+                                      saveAdminUsers(updated);
+                                    }}
+                                    disabled={adminRole === 'jefe'}
+                                    style={{ padding: '0.4rem 0.8rem', background: 'var(--bg-input)', fontSize: '0.85rem' }}
+                                  >
+                                    <option value="">-- Sin Área (Rastreo básico) --</option>
+                                    {adminAreasList.map(area => (
+                                      <option key={area} value={area}>{area}</option>
+                                    ))}
+                                  </select>
+                                )}
+                              </td>
                             <td style={{ padding: '1rem' }}>
                               {uname === 'admin' ? (
                                 <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', display: 'inline-block', paddingTop: '0.25rem' }}>
@@ -8885,6 +9148,181 @@ function App() {
                 </div>
               )}
 
+              {/* TAB 4: GESTION DE AREAS (Solo Admin) */}
+              {adminActiveTab === 'areas' && adminRole === 'admin' && (
+                <div className="glass-panel" style={{ padding: '2.5rem', maxWidth: '600px', width: '100%' }}>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Plus size={20} className="text-accent" />
+                    Gestión de Áreas de Trabajo
+                  </h3>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '2rem' }}>
+                    Como Administrador General, aquí puedes crear nuevas áreas de trabajo (ej: Riego, Sanidad) o eliminar áreas existentes. Esto afectará a todos los dropdowns de formularios y operarios en tiempo real.
+                  </p>
+
+                  {/* Crear nueva área */}
+                  <form onSubmit={async (e) => {
+                    e.preventDefault();
+                    const newAreaNameText = e.target.newAreaNameInput.value.trim();
+                    if (!newAreaNameText) return;
+                    if (adminAreasList.some(a => a.toLowerCase() === newAreaNameText.toLowerCase())) {
+                      showAdminToast("Esta área ya existe.", "error");
+                      return;
+                    }
+                    const updatedAreas = [...adminAreasList, newAreaNameText];
+                    try {
+                      const res = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/areas.json', {
+                        method: 'PUT',
+                        body: JSON.stringify(updatedAreas)
+                      });
+                      if (res.ok) {
+                        setAdminAreasList(updatedAreas);
+                        e.target.newAreaNameInput.value = '';
+                        showAdminToast("Área creada con éxito.");
+                      }
+                    } catch (err) {
+                      console.error("Error al crear área:", err);
+                      showAdminToast("Error de conexión al crear área.", "error");
+                    }
+                  }} style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
+                    <input 
+                      name="newAreaNameInput"
+                      type="text"
+                      required
+                      placeholder="Nombre de la nueva área..."
+                      className="select-control"
+                      style={{ padding: '0.5rem 0.75rem', flex: 1 }}
+                    />
+                    <button type="submit" className="btn btn-primary">
+                      Crear Área
+                    </button>
+                  </form>
+
+                  {/* Listado de áreas */}
+                  <h4 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.5rem' }}>
+                    Áreas de Trabajo Activas
+                  </h4>
+                  <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid var(--border-light)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                          <th style={{ padding: '0.75rem' }}>Nombre del Área</th>
+                          <th style={{ padding: '0.75rem', textAlign: 'right' }}>Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {adminAreasList.map(areaItem => (
+                          <tr key={areaItem} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                            <td style={{ padding: '0.75rem', fontWeight: 600 }}>{areaItem}</td>
+                            <td style={{ padding: '0.75rem', textAlign: 'right' }}>
+                              <button
+                                type="button"
+                                className="btn btn-secondary"
+                                onClick={async () => {
+                                  if (confirm(`¿Estás seguro de eliminar el área "${areaItem}"? Esto no borrará los formularios existentes pero los dejará sin área asignada.`)) {
+                                    const updatedAreas = adminAreasList.filter(a => a !== areaItem);
+                                    try {
+                                      const res = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/areas.json', {
+                                        method: 'PUT',
+                                        body: JSON.stringify(updatedAreas)
+                                      });
+                                      if (res.ok) {
+                                        setAdminAreasList(updatedAreas);
+                                        showAdminToast("Área eliminada con éxito.");
+                                      }
+                                    } catch (err) {
+                                      console.error("Error al eliminar área:", err);
+                                      showAdminToast("Error de conexión al eliminar área.", "error");
+                                    }
+                                  }
+                                }}
+                                style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: 'var(--danger)', borderColor: 'rgba(255,75,75,0.2)' }}
+                              >
+                                Eliminar
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmación de Eliminación Total */}
+      {userToDeleteTotal && (
+        <div className="modal-overlay" style={{ zIndex: 100001 }} onClick={() => setUserToDeleteTotal(null)}>
+          <div className="modal-content glass-panel" style={{ maxWidth: '400px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 style={{ color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+                <AlertTriangle size={18} />
+                Confirmación de Seguridad
+              </h3>
+              <button className="modal-close-btn" onClick={() => setUserToDeleteTotal(null)}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <p style={{ color: 'var(--text-main)', fontSize: '0.9rem', margin: 0 }}>
+                ¿Estás seguro de eliminar permanentemente al usuario <strong>{userToDeleteTotal}</strong> y todos sus datos del servidor de inmediato? Esta acción es irreversible.
+              </p>
+              <div className="filter-group" style={{ margin: 0 }}>
+                <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Escribe exactamente <strong>{userToDeleteTotal}</strong> para confirmar:
+                </label>
+                <input 
+                  type="text"
+                  className="select-control"
+                  value={deleteTotalConfirmInput}
+                  onChange={(e) => setDeleteTotalConfirmInput(e.target.value)}
+                  placeholder={userToDeleteTotal}
+                  style={{ padding: '0.5rem 0.75rem', marginTop: '0.5rem', width: '100%', background: 'var(--bg-input)', color: '#fff' }}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setUserToDeleteTotal(null)}
+                  style={{ flex: 1 }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="btn btn-primary"
+                  disabled={deleteTotalConfirmInput !== userToDeleteTotal}
+                  onClick={async () => {
+                    const next = { ...adminUsers };
+                    delete next[userToDeleteTotal];
+                    try {
+                      const res = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/usuarios.json', {
+                        method: 'PUT',
+                        body: JSON.stringify(next)
+                      });
+                      if (res.ok) {
+                        setAdminUsers(next);
+                        showAdminToast("Usuario eliminado definitivamente del servidor.");
+                        setUserToDeleteTotal(null);
+                      }
+                    } catch (e) {
+                      console.error("Error al eliminar permanentemente:", e);
+                      showAdminToast("Error al conectar con la base de datos.", "error");
+                    }
+                  }}
+                  style={{ 
+                    flex: 1, 
+                    background: deleteTotalConfirmInput === userToDeleteTotal ? 'var(--danger)' : 'rgba(255,75,75,0.1)',
+                    borderColor: deleteTotalConfirmInput === userToDeleteTotal ? 'var(--danger)' : 'rgba(255,75,75,0.1)',
+                    color: deleteTotalConfirmInput === userToDeleteTotal ? '#fff' : 'var(--text-muted)',
+                    opacity: deleteTotalConfirmInput === userToDeleteTotal ? 1 : 0.4
+                  }}
+                >
+                  Eliminar Todo
+                </button>
+              </div>
             </div>
           </div>
         </div>
