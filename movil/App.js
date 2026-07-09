@@ -71,6 +71,63 @@ export default function App() {
   const [syncing, setSyncing] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
 
+  // Sincronizar formularios asignados desde Firebase Cloud
+  const syncAssignedFormsFromServer = async (username) => {
+    try {
+      const userRes = await fetch(FIREBASE_DB_URL + '/registros/usuarios/' + username + '.json');
+      if (!userRes.ok) return;
+      const uData = await userRes.json();
+      if (!uData || uData.status === 'solicitado_eliminar' || uData.status === 'eliminando') {
+        return;
+      }
+      
+      const userArea = uData.area || '';
+      let forms = [];
+      
+      if (username === 'admin') {
+        const formsRes = await fetch(FIREBASE_DB_URL + '/registros/configuracion_formularios.json');
+        if (formsRes.ok) {
+          const allData = await formsRes.json();
+          if (allData) {
+            Object.values(allData).forEach(areaData => {
+              if (areaData && areaData.formularios) {
+                forms = [...forms, ...areaData.formularios];
+              }
+            });
+          }
+        }
+      } else {
+        const formsRes = await fetch(FIREBASE_DB_URL + '/registros/configuracion_formularios/' + userArea + '.json');
+        if (formsRes.ok) {
+          const formsData = await formsRes.json();
+          if (formsData && formsData.formularios) {
+            forms = formsData.formularios;
+          }
+        }
+        
+        if (uData.formularios_permitidos) {
+          forms = forms.filter(f => uData.formularios_permitidos[f.id] !== false);
+        }
+      }
+      
+      if (forms.length > 0) {
+        await AsyncStorage.setItem('@assigned_forms_' + username, JSON.stringify(forms));
+        await AsyncStorage.setItem('@user_area_' + username, userArea);
+        setAssignedForms(forms);
+        const activeLabor = await AsyncStorage.getItem('@labor_active_' + username);
+        if (activeLabor !== 'true') {
+          if (forms.length === 1) {
+            setSelectedForm(forms[0]);
+          } else {
+            setSelectedForm(null);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Error al sincronizar formularios de red:", err);
+    }
+  };
+
   // Polling para actualizar estadísticas locales periódicamente cuando la labor está activa
   useEffect(() => {
     let interval = null;
@@ -129,6 +186,9 @@ export default function App() {
           if (cachedValuesStr) {
             setFormValues(JSON.parse(cachedValuesStr));
           }
+
+          // Descargar formularios actualizados de la nube en segundo plano
+          syncAssignedFormsFromServer(typedUser);
         }
         
         // Validar si el servicio de tracking sigue activo
@@ -524,13 +584,13 @@ export default function App() {
 
   // Sincronizar todos los datos acumulados con Firebase Cloud
   const handleSyncData = async () => {
-    if (pendingFormsCount === 0 && pendingGpsCount === 0) {
-      Alert.alert("Sin datos", "No tienes datos pendientes por sincronizar en este momento.");
-      return;
-    }
-
     setSyncing(true);
     try {
+      const loggedUser = await AsyncStorage.getItem('@logged_user') || 'admin';
+      
+      // Intentar descargar la última configuración de formularios asignados
+      await syncAssignedFormsFromServer(loggedUser);
+
       // 1. Sincronizar Formularios de Campo
       const formsStr = await AsyncStorage.getItem('@forms_data');
       const forms = formsStr ? JSON.parse(formsStr) : [];
@@ -549,7 +609,6 @@ export default function App() {
       const track = trackStr ? JSON.parse(trackStr) : [];
 
       if (track.length > 0) {
-        const loggedUser = await AsyncStorage.getItem('@logged_user') || 'admin';
         const trackId = 'track-' + Date.now();
         await fetch(FIREBASE_DB_URL + '/registros/campo_recorridos/' + trackId + '.json', {
           method: 'PUT',
@@ -562,11 +621,15 @@ export default function App() {
         });
       }
 
-      // Limpiar AsyncStorage local
-      await AsyncStorage.setItem('@forms_data', JSON.stringify([]));
-      await AsyncStorage.setItem('@gps_track', JSON.stringify([]));
+      // Limpiar AsyncStorage local si hubo envíos
+      if (forms.length > 0) {
+        await AsyncStorage.setItem('@forms_data', JSON.stringify([]));
+      }
+      if (track.length > 0) {
+        await AsyncStorage.setItem('@gps_track', JSON.stringify([]));
+      }
 
-      Alert.alert("Sincronización Exitosa", "Toda la información del día ha sido sincronizada con éxito.");
+      Alert.alert("Sincronización Exitosa", "Toda la información del día y los formularios se han actualizado con éxito.");
       updateLocalStats();
     } catch (err) {
       console.error("Error al sincronizar con Firebase:", err);
@@ -732,15 +795,15 @@ export default function App() {
             {/* CASO C: Formulario seleccionado o asignado por defecto */}
             {selectedForm && (
               <View>
-                <View style={styles.formHeaderRow}>
+                <View style={{ marginBottom: 20 }}>
                   <Text style={styles.sectionTitle}>{selectedForm.titulo}</Text>
                   {/* Botón de volver al selector si tiene más de 1 y la labor no ha iniciado */}
                   {assignedForms.length > 1 && !laborActive && (
                     <TouchableOpacity 
-                      style={styles.pinBtn} 
+                      style={[styles.pinBtn, { marginTop: 8, alignSelf: 'flex-start' }]} 
                       onPress={() => setSelectedForm(null)}
                     >
-                      <Text style={styles.pinBtnText}>Cambiar Labor</Text>
+                      <Text style={styles.pinBtnText}>← Cambiar Labor</Text>
                     </TouchableOpacity>
                   )}
                 </View>
