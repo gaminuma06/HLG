@@ -213,14 +213,39 @@ export default function App() {
       }
 
       if (authenticated) {
-        // 2. Descargar formularios del área asociada
+        // 2. Descargar formularios según el rol del usuario
         let forms = [];
         try {
-          const formsRes = await fetch(FIREBASE_DB_URL + '/registros/configuracion_formularios/' + userArea + '.json');
-          if (formsRes.ok) {
-            const formsData = await formsRes.json();
-            if (formsData && formsData.formularios) {
-              forms = formsData.formularios;
+          if (typedUser === 'admin') {
+            // Admin descarga todos los formularios de todas las áreas
+            const formsRes = await fetch(FIREBASE_DB_URL + '/registros/configuracion_formularios.json');
+            if (formsRes.ok) {
+              const allData = await formsRes.json();
+              if (allData) {
+                Object.values(allData).forEach(areaData => {
+                  if (areaData && areaData.formularios) {
+                    forms = [...forms, ...areaData.formularios];
+                  }
+                });
+              }
+            }
+          } else {
+            // Operario descarga solo los formularios de su área
+            const formsRes = await fetch(FIREBASE_DB_URL + '/registros/configuracion_formularios/' + userArea + '.json');
+            if (formsRes.ok) {
+              const formsData = await formsRes.json();
+              if (formsData && formsData.formularios) {
+                forms = formsData.formularios;
+              }
+            }
+            
+            // Descargar el perfil de usuario actual para filtrar por permisos chuleados
+            const userProfileRes = await fetch(FIREBASE_DB_URL + '/registros/usuarios/' + typedUser + '.json');
+            if (userProfileRes.ok) {
+              const uData = await userProfileRes.json();
+              if (uData && uData.formularios_permitidos) {
+                forms = forms.filter(f => uData.formularios_permitidos[f.id] !== false);
+              }
             }
           }
         } catch (fErr) {

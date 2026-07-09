@@ -8384,21 +8384,25 @@ function App() {
                               />
                             </td>
                             <td style={{ padding: '0.75rem' }}>
-                              <select
-                                className="select-control"
-                                value={uinfo.area || ''}
-                                onChange={(e) => {
-                                  const updated = { ...adminUsers, [uname]: { ...uinfo, area: e.target.value } };
-                                  setAdminUsers(updated);
-                                  saveAdminUsers(updated);
-                                }}
-                                style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', background: 'var(--bg-input)' }}
-                              >
-                                <option value="Sanidad">Sanidad</option>
-                                <option value="Cosecha">Cosecha</option>
-                                <option value="Riego">Riego</option>
-                                <option value="Otros">Otros</option>
-                              </select>
+                              {uname === 'admin' ? (
+                                <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Administrador General</span>
+                              ) : (
+                                <select
+                                  className="select-control"
+                                  value={uinfo.area || ''}
+                                  onChange={(e) => {
+                                    const updated = { ...adminUsers, [uname]: { ...uinfo, area: e.target.value } };
+                                    setAdminUsers(updated);
+                                    saveAdminUsers(updated);
+                                  }}
+                                  style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', background: 'var(--bg-input)' }}
+                                >
+                                  <option value="Sanidad">Sanidad</option>
+                                  <option value="Cosecha">Cosecha</option>
+                                  <option value="Riego">Riego</option>
+                                  <option value="Otros">Otros</option>
+                                </select>
+                              )}
                             </td>
                             <td style={{ padding: '0.75rem', textAlign: 'right' }}>
                               <button 
@@ -8783,44 +8787,86 @@ function App() {
                     Permisos y Áreas de Trabajo por Operario
                   </h3>
                   <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '2rem' }}>
-                    Asigna a qué área pertenece cada operario. Esto definirá los formularios dinámicos a los que tendrán acceso en su celular al iniciar sesión. Si un usuario no tiene un área con formularios activos, solo verá el modo de rastreo GPS básico.
+                    Asigna a qué área pertenece cada operario y selecciona de manera individual a qué formularios dinámicos tiene permisos de acceso. El usuario 'admin' tiene permisos generales sobre todas las áreas.
                   </p>
                   
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
                     <thead>
                       <tr style={{ borderBottom: '2px solid var(--border-light)', textAlign: 'left', color: 'var(--text-muted)' }}>
-                        <th style={{ padding: '1rem' }}>Operario</th>
-                        <th style={{ padding: '1rem' }}>Área de Trabajo Asignada</th>
-                        <th style={{ padding: '1rem' }}>Formularios Activos Visibles</th>
+                        <th style={{ padding: '1rem', width: '20%' }}>Operario</th>
+                        <th style={{ padding: '1rem', width: '30%' }}>Área de Trabajo Asignada</th>
+                        <th style={{ padding: '1rem', width: '50%' }}>Formularios Permitidos (Chulear accesos)</th>
                       </tr>
                     </thead>
                     <tbody>
                       {Object.entries(adminUsers).map(([uname, uinfo]) => {
                         const formsInArea = adminFormularios[uinfo.area]?.formularios || [];
                         return (
-                          <tr key={uname} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                            <td style={{ padding: '1rem', fontWeight: 600 }}>{uname}</td>
+                          <tr key={uname} style={{ borderBottom: '1px solid var(--border-light)', verticalAlign: 'top' }}>
+                            <td style={{ padding: '1.25rem 1rem', fontWeight: 600 }}>{uname}</td>
                             <td style={{ padding: '1rem' }}>
-                              <select
-                                className="select-control"
-                                value={uinfo.area || ''}
-                                onChange={(e) => {
-                                  const updated = { ...adminUsers, [uname]: { ...uinfo, area: e.target.value } };
-                                  setAdminUsers(updated);
-                                  saveAdminUsers(updated);
-                                }}
-                                style={{ padding: '0.4rem 0.8rem', background: 'var(--bg-input)', fontSize: '0.85rem' }}
-                              >
-                                <option value="">-- Sin Área (Rastreo GPS Puro) --</option>
-                                {Object.keys(adminFormularios).map(area => (
-                                  <option key={area} value={area}>{area}</option>
-                                ))}
-                              </select>
+                              {uname === 'admin' ? (
+                                <span style={{ color: 'var(--accent)', fontWeight: 600, display: 'inline-block', paddingTop: '0.25rem' }}>
+                                  Administrador General (Control Total)
+                                </span>
+                              ) : (
+                                <select
+                                  className="select-control"
+                                  value={uinfo.area || ''}
+                                  onChange={(e) => {
+                                    const updated = { ...adminUsers, [uname]: { ...uinfo, area: e.target.value, formularios_permitidos: {} } };
+                                    setAdminUsers(updated);
+                                    saveAdminUsers(updated);
+                                  }}
+                                  style={{ padding: '0.4rem 0.8rem', background: 'var(--bg-input)', fontSize: '0.85rem' }}
+                                >
+                                  <option value="">-- Sin Área (Rastreo básico) --</option>
+                                  {Object.keys(adminFormularios).map(area => (
+                                    <option key={area} value={area}>{area}</option>
+                                  ))}
+                                </select>
+                              )}
                             </td>
-                            <td style={{ padding: '1rem', color: formsInArea.length > 0 ? 'var(--accent)' : 'var(--text-muted)' }}>
-                              {formsInArea.length > 0 
-                                ? formsInArea.map(f => f.titulo).join(', ') 
-                                : 'Rastreo GPS básico (Ningún formulario asignado)'}
+                            <td style={{ padding: '1rem' }}>
+                              {uname === 'admin' ? (
+                                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', display: 'inline-block', paddingTop: '0.25rem' }}>
+                                  Acceso a todos los formularios de todas las áreas
+                                </span>
+                              ) : uinfo.area ? (
+                                formsInArea.length === 0 ? (
+                                  <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                    No hay formularios creados en esta área.
+                                  </span>
+                                ) : (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                    {formsInArea.map(f => {
+                                      const isChecked = uinfo.formularios_permitidos ? (uinfo.formularios_permitidos[f.id] !== false) : true;
+                                      return (
+                                        <label key={f.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem' }}>
+                                          <input
+                                            type="checkbox"
+                                            checked={isChecked}
+                                            onChange={(e) => {
+                                              const currentPermisos = uinfo.formularios_permitidos || {};
+                                              const nextPermisos = { ...currentPermisos, [f.id]: e.target.checked };
+                                              const nextUser = { ...uinfo, formularios_permitidos: nextPermisos };
+                                              const nextUsers = { ...adminUsers, [uname]: nextUser };
+                                              setAdminUsers(nextUsers);
+                                              saveAdminUsers(nextUsers);
+                                            }}
+                                            style={{ cursor: 'pointer' }}
+                                          />
+                                          <span style={{ color: isChecked ? 'var(--text-main)' : 'var(--text-muted)' }}>{f.titulo}</span>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                )
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                  Asigna un área de trabajo primero.
+                                </span>
+                              )}
                             </td>
                           </tr>
                         );
