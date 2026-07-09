@@ -8211,7 +8211,7 @@ function App() {
           }}>
             <h2 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <ShieldCheck size={28} />
-              Administración y Parametrización de Campo
+              Parametrización de campo
             </h2>
             <button 
               onClick={() => setAdminPanelOpen(false)} 
@@ -8702,7 +8702,7 @@ function App() {
                                 </div>
 
                                 {/* Opciones de Select */}
-                                {field.type === 'select' && (
+                                {(field.type === 'select' || field.type === 'checkbox') && (
                                   <div className="filter-group" style={{ margin: 0, flex: '1 1 100%', marginTop: '0.5rem' }}>
                                     <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Opciones de la Lista (separadas por coma)</label>
                                     <input 

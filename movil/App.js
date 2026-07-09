@@ -792,39 +792,91 @@ export default function App() {
                               })}
                             </View>
                           ) : field.type === 'checkbox' ? (
-                            // Tipo: checkbox (Casilla de verificación)
-                            <TouchableOpacity
-                              style={{
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                gap: 10,
-                                backgroundColor: formValues[field.id] === 'Sí' ? 'rgba(0, 242, 254, 0.1)' : '#0c0f1a',
-                                borderWidth: 1,
-                                borderColor: formValues[field.id] === 'Sí' ? '#00f2fe' : 'rgba(255,255,255,0.05)',
-                                borderRadius: 8,
-                                padding: 14,
-                                marginVertical: 4
-                              }}
-                              onPress={() => handleFieldChange(field.id, formValues[field.id] === 'Sí' ? 'No' : 'Sí')}
-                            >
-                              <View style={{
-                                width: 22,
-                                height: 22,
-                                borderRadius: 4,
-                                borderWidth: 1,
-                                borderColor: formValues[field.id] === 'Sí' ? '#00f2fe' : '#a0aec0',
-                                backgroundColor: formValues[field.id] === 'Sí' ? '#00f2fe' : 'transparent',
-                                alignItems: 'center',
-                                justifyContent: 'center'
-                              }}>
-                                {formValues[field.id] === 'Sí' && (
-                                  <Text style={{ color: '#0c0f1a', fontWeight: 'bold', fontSize: 13 }}>✓</Text>
-                                )}
-                              </View>
-                              <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '500' }}>
-                                Marcar/Chulear esta opción
-                              </Text>
-                            </TouchableOpacity>
+                            // Tipo: checkbox (Casilla de verificación / Checklist)
+                            <View style={{ gap: 8, marginVertical: 4 }}>
+                              {(field.options && field.options.length > 0) ? (
+                                // Lista de opciones múltiples
+                                field.options.map(opt => {
+                                  const currentVal = formValues[field.id] || '';
+                                  const selectedOpts = currentVal ? currentVal.split(',').map(s => s.trim()) : [];
+                                  const isChecked = selectedOpts.includes(opt);
+                                  
+                                  return (
+                                    <TouchableOpacity
+                                      key={opt}
+                                      style={{
+                                        flexDirection: 'row',
+                                        alignItems: 'center',
+                                        gap: 10,
+                                        backgroundColor: isChecked ? 'rgba(0, 242, 254, 0.1)' : '#0c0f1a',
+                                        borderWidth: 1,
+                                        borderColor: isChecked ? '#00f2fe' : 'rgba(255,255,255,0.05)',
+                                        borderRadius: 8,
+                                        padding: 12
+                                      }}
+                                      onPress={() => {
+                                        let nextOpts;
+                                        if (isChecked) {
+                                          nextOpts = selectedOpts.filter(o => o !== opt);
+                                        } else {
+                                          nextOpts = [...selectedOpts, opt];
+                                        }
+                                        handleFieldChange(field.id, nextOpts.join(', '));
+                                      }}
+                                    >
+                                      <View style={{
+                                        width: 20,
+                                        height: 20,
+                                        borderRadius: 4,
+                                        borderWidth: 1,
+                                        borderColor: isChecked ? '#00f2fe' : '#a0aec0',
+                                        backgroundColor: isChecked ? '#00f2fe' : 'transparent',
+                                        alignItems: 'center',
+                                        justifyContent: 'center'
+                                      }}>
+                                        {isChecked && (
+                                          <Text style={{ color: '#0c0f1a', fontWeight: 'bold', fontSize: 11 }}>✓</Text>
+                                        )}
+                                      </View>
+                                      <Text style={{ color: '#ffffff', fontSize: 14 }}>{opt}</Text>
+                                    </TouchableOpacity>
+                                  );
+                                })
+                              ) : (
+                                // Casilla única Sí/No
+                                <TouchableOpacity
+                                  style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    gap: 10,
+                                    backgroundColor: formValues[field.id] === 'Sí' ? 'rgba(0, 242, 254, 0.1)' : '#0c0f1a',
+                                    borderWidth: 1,
+                                    borderColor: formValues[field.id] === 'Sí' ? '#00f2fe' : 'rgba(255,255,255,0.05)',
+                                    borderRadius: 8,
+                                    padding: 14
+                                  }}
+                                  onPress={() => handleFieldChange(field.id, formValues[field.id] === 'Sí' ? 'No' : 'Sí')}
+                                >
+                                  <View style={{
+                                    width: 22,
+                                    height: 22,
+                                    borderRadius: 4,
+                                    borderWidth: 1,
+                                    borderColor: formValues[field.id] === 'Sí' ? '#00f2fe' : '#a0aec0',
+                                    backgroundColor: formValues[field.id] === 'Sí' ? '#00f2fe' : 'transparent',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                  }}>
+                                    {formValues[field.id] === 'Sí' && (
+                                      <Text style={{ color: '#0c0f1a', fontWeight: 'bold', fontSize: 13 }}>✓</Text>
+                                    )}
+                                  </View>
+                                  <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '500' }}>
+                                    Marcar/Chulear esta opción
+                                  </Text>
+                                </TouchableOpacity>
+                              )}
+                            </View>
                           ) : field.type === 'textarea' ? (
                             // Tipo: textarea (observaciones multilínea)
                             <TextInput
