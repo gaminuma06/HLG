@@ -796,6 +796,9 @@ function App() {
   const [adminAreasList, setAdminAreasList] = useState(["Sanidad", "Cosecha", "Riego", "Otros"]);
   const [userToDeleteTotal, setUserToDeleteTotal] = useState(null);
   const [deleteTotalConfirmInput, setDeleteTotalConfirmInput] = useState('');
+  const [editingUserKey, setEditingUserKey] = useState(null);
+  const [editingUserTempName, setEditingUserTempName] = useState('');
+  const [editingUserTempPass, setEditingUserTempPass] = useState('');
   const showAdminToast = (msg, type = 'success') => {
     setAdminToast({ message: msg, type });
     setTimeout(() => {
@@ -8467,24 +8470,21 @@ function App() {
                         />
                       </div>
 
-                      <div className="filter-group" style={{ margin: 0 }}>
-                        <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Área de Trabajo</label>
-                        <select
-                          className="select-control"
-                          value={adminRole === 'jefe' ? adminArea : newArea}
-                          onChange={(e) => setNewArea(e.target.value)}
-                          disabled={adminRole === 'jefe'}
-                          style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem', width: '100%', background: 'var(--bg-input)' }}
-                        >
-                          {adminRole === 'jefe' ? (
-                            <option value={adminArea}>{adminArea}</option>
-                          ) : (
-                            adminAreasList.map(areaOpt => (
+                      {adminRole === 'admin' && (
+                        <div className="filter-group" style={{ margin: 0 }}>
+                          <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Área de Trabajo</label>
+                          <select
+                            className="select-control"
+                            value={newArea}
+                            onChange={(e) => setNewArea(e.target.value)}
+                            style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem', width: '100%', background: 'var(--bg-input)' }}
+                          >
+                            {adminAreasList.map(areaOpt => (
                               <option key={areaOpt} value={areaOpt}>{areaOpt}</option>
-                            ))
-                          )}
-                        </select>
-                      </div>
+                            ))}
+                          </select>
+                        </div>
+                      )}
 
                       {adminRole === 'admin' && (
                         <div className="filter-group" style={{ margin: 0 }}>
@@ -8532,7 +8532,11 @@ function App() {
                             const isInactive = uinfo.status && uinfo.status !== 'activo';
                             const isRequestedDelete = uinfo.status === 'solicitado_eliminar';
                             const isEliminating = uinfo.status === 'eliminando';
+                            const isEditing = editingUserKey === uname;
                             
+                            // Permiso de edición: Admin puede editar a todos; Jefe solo a operarios de su área.
+                            const isUserEditable = adminRole === 'admin' || (adminRole === 'jefe' && uinfo.area === adminArea && uinfo.role !== 'admin' && uinfo.role !== 'jefe');
+
                             let daysLeft = 90;
                             if (isEliminating && uinfo.deletion_start_date) {
                               const diffMs = Date.now() - uinfo.deletion_start_date;
@@ -8550,31 +8554,45 @@ function App() {
                                 }}
                               >
                                 <td style={{ padding: '0.75rem', fontWeight: 600 }}>
-                                  {uname}
-                                  {isRequestedDelete && (
-                                    <span style={{ fontSize: '0.7rem', color: 'orange', display: 'block', fontWeight: 500 }}>
-                                      (Baja solicitada por supervisor)
-                                    </span>
-                                  )}
-                                  {isEliminating && (
-                                    <span style={{ fontSize: '0.7rem', color: 'red', display: 'block', fontWeight: 500 }}>
-                                      (Eliminación en {daysLeft} días)
-                                    </span>
+                                  {isEditing ? (
+                                    <input 
+                                      type="text"
+                                      className="select-control"
+                                      value={editingUserTempName}
+                                      onChange={(e) => setEditingUserTempName(e.target.value)}
+                                      disabled={uname === 'admin'}
+                                      style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', background: 'var(--bg-input)', width: '110px' }}
+                                    />
+                                  ) : (
+                                    <>
+                                      {uname}
+                                      {isRequestedDelete && (
+                                        <span style={{ fontSize: '0.7rem', color: 'orange', display: 'block', fontWeight: 500 }}>
+                                          (Baja solicitada por supervisor)
+                                        </span>
+                                      )}
+                                      {isEliminating && (
+                                        <span style={{ fontSize: '0.7rem', color: 'red', display: 'block', fontWeight: 500 }}>
+                                          (Eliminación en {daysLeft} días)
+                                        </span>
+                                      )}
+                                    </>
                                   )}
                                 </td>
                                 <td style={{ padding: '0.75rem' }}>
-                                  <input 
-                                    type="text"
-                                    className="select-control"
-                                    value={uinfo.password}
-                                    onChange={(e) => {
-                                      const updated = { ...adminUsers, [uname]: { ...uinfo, password: e.target.value } };
-                                      setAdminUsers(updated);
-                                    }}
-                                    onBlur={() => saveAdminUsers(adminUsers)}
-                                    disabled={isInactive}
-                                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', background: 'transparent', border: '1px dashed var(--border-light)', width: '150px' }}
-                                  />
+                                  {isEditing ? (
+                                    <input 
+                                      type="text"
+                                      className="select-control"
+                                      value={editingUserTempPass}
+                                      onChange={(e) => setEditingUserTempPass(e.target.value)}
+                                      style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', background: 'var(--bg-input)', width: '110px' }}
+                                    />
+                                  ) : (
+                                    <span style={{ color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                                      {uinfo.password}
+                                    </span>
+                                  )}
                                 </td>
                                 <td style={{ padding: '0.75rem' }}>
                                   {uname === 'admin' ? (
@@ -8589,7 +8607,7 @@ function App() {
                                           setAdminUsers(updated);
                                           saveAdminUsers(updated);
                                         }}
-                                        disabled={adminRole === 'jefe' || isInactive}
+                                        disabled={adminRole !== 'admin' || isInactive || isEditing}
                                         style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', background: 'var(--bg-input)' }}
                                       >
                                         {adminAreasList.map(areaOpt => (
@@ -8604,90 +8622,151 @@ function App() {
                                 </td>
                                 <td style={{ padding: '0.75rem', textAlign: 'right' }}>
                                   <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', alignItems: 'center' }}>
-                                    {/* Caso 1: Usuario activo normal */}
-                                    {!isInactive && uname !== 'admin' && (
-                                      <button 
-                                        className="btn btn-secondary" 
-                                        onClick={() => {
-                                          const nextStatus = adminRole === 'admin' ? 'eliminando' : 'solicitado_eliminar';
-                                          const updated = { 
-                                            ...adminUsers, 
-                                            [uname]: { 
-                                              ...uinfo, 
-                                              status: nextStatus,
-                                              deletion_start_date: adminRole === 'admin' ? Date.now() : null
-                                            } 
-                                          };
-                                          saveAdminUsers(updated);
-                                          showAdminToast(adminRole === 'admin' ? "Baja aprobada. Iniciado conteo de 90 días." : "Baja de operario solicitada.");
-                                        }}
-                                        style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: 'var(--danger)', borderColor: 'rgba(255,75,75,0.2)' }}
-                                      >
-                                        <Trash2 size={12} />
-                                        Eliminar
-                                      </button>
-                                    )}
-
-                                    {/* Caso 2: Baja solicitada por Jefe */}
-                                    {isRequestedDelete && (
+                                    {/* Edición Inline Controles */}
+                                    {isEditing ? (
                                       <>
-                                        {adminRole === 'admin' && (
+                                        <button 
+                                          className="btn btn-primary"
+                                          onClick={() => {
+                                            const nextName = editingUserTempName.trim().toLowerCase();
+                                            const nextPass = editingUserTempPass.trim();
+                                            if (!nextName || !nextPass) {
+                                              showAdminToast("El nombre y contraseña no pueden estar vacíos.", "error");
+                                              return;
+                                            }
+                                            if (nextName !== uname && adminUsers[nextName]) {
+                                              showAdminToast("El nombre de usuario ya está en uso.", "error");
+                                              return;
+                                            }
+                                            
+                                            const nextUsers = { ...adminUsers };
+                                            if (nextName !== uname) {
+                                              nextUsers[nextName] = { ...uinfo, password: nextPass };
+                                              delete nextUsers[uname];
+                                            } else {
+                                              nextUsers[uname] = { ...uinfo, password: nextPass };
+                                            }
+                                            
+                                            setAdminUsers(nextUsers);
+                                            saveAdminUsers(nextUsers);
+                                            showAdminToast("Usuario modificado con éxito.");
+                                            setEditingUserKey(null);
+                                          }}
+                                          style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem' }}
+                                        >
+                                          Guardar
+                                        </button>
+                                        <button 
+                                          className="btn btn-secondary"
+                                          onClick={() => setEditingUserKey(null)}
+                                          style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: 'var(--text-muted)', borderColor: 'rgba(255,255,255,0.1)' }}
+                                        >
+                                          Cancelar
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <>
+                                        {/* Botón Editar */}
+                                        {isUserEditable && !isInactive && (
                                           <button 
-                                            className="btn btn-primary" 
+                                            className="btn btn-secondary"
                                             onClick={() => {
+                                              setEditingUserKey(uname);
+                                              setEditingUserTempName(uname);
+                                              setEditingUserTempPass(uinfo.password);
+                                            }}
+                                            style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: 'var(--accent)', borderColor: 'rgba(0, 242, 254, 0.2)' }}
+                                          >
+                                            Editar
+                                          </button>
+                                        )}
+
+                                        {/* Caso 1: Usuario activo normal */}
+                                        {!isInactive && uname !== 'admin' && (
+                                          <button 
+                                            className="btn btn-secondary" 
+                                            onClick={() => {
+                                              const nextStatus = adminRole === 'admin' ? 'eliminando' : 'solicitado_eliminar';
                                               const updated = { 
                                                 ...adminUsers, 
                                                 [uname]: { 
                                                   ...uinfo, 
-                                                  status: 'eliminando',
-                                                  deletion_start_date: Date.now()
+                                                  status: nextStatus,
+                                                  deletion_start_date: adminRole === 'admin' ? Date.now() : null
                                                 } 
                                               };
                                               saveAdminUsers(updated);
-                                              showAdminToast("Baja aceptada. Iniciada cuenta regresiva de 90 días.");
+                                              showAdminToast(adminRole === 'admin' ? "Baja aprobada. Iniciado conteo de 90 días." : "Baja de operario solicitada.");
                                             }}
-                                            style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem' }}
-                                          >
-                                            Aceptar eliminación de usuario
-                                          </button>
-                                        )}
-                                        <button 
-                                          className="btn btn-secondary" 
-                                          onClick={() => {
-                                            const updated = { ...adminUsers, [uname]: { ...uinfo, status: 'activo' } };
-                                            saveAdminUsers(updated);
-                                            showAdminToast("Operario reactivado correctamente.");
-                                          }}
-                                          style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: 'var(--accent)', borderColor: 'rgba(0, 242, 254, 0.2)' }}
-                                        >
-                                          Reactivar
-                                        </button>
-                                      </>
-                                    )}
-
-                                    {/* Caso 3: Eliminando (Cuenta regresiva activa) */}
-                                    {isEliminating && (
-                                      <>
-                                        <button 
-                                          className="btn btn-secondary" 
-                                          onClick={() => {
-                                            const updated = { ...adminUsers, [uname]: { ...uinfo, status: 'activo' } };
-                                            saveAdminUsers(updated);
-                                            showAdminToast("Operario reactivado correctamente.");
-                                          }}
-                                          style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: 'var(--accent)', borderColor: 'rgba(0, 242, 254, 0.2)' }}
-                                        >
-                                          Reactivar
-                                        </button>
-                                        
-                                        {adminRole === 'admin' && (
-                                          <button 
-                                            className="btn btn-secondary" 
-                                            onClick={() => setUserToDeleteTotal(uname)}
                                             style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: 'var(--danger)', borderColor: 'rgba(255,75,75,0.2)' }}
                                           >
-                                            Eliminación Total
+                                            <Trash2 size={12} />
+                                            Eliminar
                                           </button>
+                                        )}
+
+                                        {/* Caso 2: Baja solicitada por Jefe */}
+                                        {isRequestedDelete && (
+                                          <>
+                                            {adminRole === 'admin' && (
+                                              <button 
+                                                className="btn btn-primary" 
+                                                onClick={() => {
+                                                  const updated = { 
+                                                    ...adminUsers, 
+                                                    [uname]: { 
+                                                      ...uinfo, 
+                                                      status: 'eliminando',
+                                                      deletion_start_date: Date.now()
+                                                    } 
+                                                  };
+                                                  saveAdminUsers(updated);
+                                                  showAdminToast("Baja aceptada. Iniciada cuenta regresiva de 90 días.");
+                                                }}
+                                                style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem' }}
+                                              >
+                                                Aceptar eliminación
+                                              </button>
+                                            )}
+                                            <button 
+                                              className="btn btn-secondary" 
+                                              onClick={() => {
+                                                const updated = { ...adminUsers, [uname]: { ...uinfo, status: 'activo' } };
+                                                saveAdminUsers(updated);
+                                                showAdminToast("Operario reactivado correctamente.");
+                                              }}
+                                              style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: 'var(--accent)', borderColor: 'rgba(0, 242, 254, 0.2)' }}
+                                            >
+                                              Reactivar
+                                            </button>
+                                          </>
+                                        )}
+
+                                        {/* Caso 3: Eliminando (Cuenta regresiva activa) */}
+                                        {isEliminating && (
+                                          <>
+                                            <button 
+                                              className="btn btn-secondary" 
+                                              onClick={() => {
+                                                const updated = { ...adminUsers, [uname]: { ...uinfo, status: 'activo' } };
+                                                saveAdminUsers(updated);
+                                                showAdminToast("Operario reactivado correctamente.");
+                                              }}
+                                              style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: 'var(--accent)', borderColor: 'rgba(0, 242, 254, 0.2)' }}
+                                            >
+                                              Reactivar
+                                            </button>
+                                            
+                                            {adminRole === 'admin' && (
+                                              <button 
+                                                className="btn btn-secondary" 
+                                                onClick={() => setUserToDeleteTotal(uname)}
+                                                style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: 'var(--danger)', borderColor: 'rgba(255,75,75,0.2)' }}
+                                              >
+                                                Eliminación Total
+                                              </button>
+                                            )}
+                                          </>
                                         )}
                                       </>
                                     )}
