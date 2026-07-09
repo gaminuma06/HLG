@@ -20,6 +20,11 @@ import {
   Settings,
   X,
   BarChart2,
+  Users,
+  Plus,
+  Sliders,
+  ShieldCheck,
+  Edit3,
   LineChart,
   Sun,
   Search,
@@ -761,6 +766,22 @@ function App() {
     return sessionStorage.getItem('isAdminLoggedIn') === 'true';
   });
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [loginTarget, setLoginTarget] = useState('settings'); // 'settings' | 'admin'
+  const [adminPanelOpen, setAdminPanelOpen] = useState(false);
+  const [adminActiveTab, setAdminActiveTab] = useState('usuarios'); // 'usuarios' | 'formularios' | 'permisos'
+  const [adminUsers, setAdminUsers] = useState({});
+  const [adminFormularios, setAdminFormularios] = useState({});
+  
+  // Estados para creación de usuario
+  const [newUsername, setNewUsername] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newArea, setNewArea] = useState('Sanidad');
+  
+  // Estados para edición de formularios
+  const [selectedAreaEdit, setSelectedAreaEdit] = useState('Sanidad');
+  const [activeFormIndexEdit, setActiveFormIndexEdit] = useState(null);
+  const [customAreaName, setCustomAreaName] = useState('');
+  const [showCustomAreaInput, setShowCustomAreaInput] = useState(false);
   const [loginUser, setLoginUser] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState(null);
@@ -1926,7 +1947,12 @@ function App() {
         setIsAdminLoggedIn(true);
         sessionStorage.setItem('isAdminLoggedIn', 'true');
         setShowLoginModal(false);
-        setSettingsOpen(true);
+        if (loginTarget === 'admin') {
+          loadAdminData();
+          setAdminPanelOpen(true);
+        } else {
+          setSettingsOpen(true);
+        }
         setLoginUser('');
         setLoginPassword('');
       } else {
@@ -1939,7 +1965,12 @@ function App() {
         setIsAdminLoggedIn(true);
         sessionStorage.setItem('isAdminLoggedIn', 'true');
         setShowLoginModal(false);
-        setSettingsOpen(true);
+        if (loginTarget === 'admin') {
+          loadAdminData();
+          setAdminPanelOpen(true);
+        } else {
+          setSettingsOpen(true);
+        }
         setLoginUser('');
         setLoginPassword('');
       } else {
@@ -1958,7 +1989,75 @@ function App() {
       setLoginError(null);
       setLoginUser('');
       setLoginPassword('');
+      setLoginTarget('settings');
       setShowLoginModal(true);
+    }
+  };
+
+  // Abrir panel de administración (o pedir login si no está autenticado)
+  const handleOpenAdmin = () => {
+    if (isAdminLoggedIn) {
+      loadAdminData();
+      setAdminPanelOpen(true);
+    } else {
+      setLoginError(null);
+      setLoginUser('');
+      setLoginPassword('');
+      setLoginTarget('admin');
+      setShowLoginModal(true);
+    }
+  };
+
+  // Cargar datos de usuarios y formularios desde Firebase
+  const loadAdminData = async () => {
+    try {
+      const usersRes = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/usuarios.json');
+      if (usersRes.ok) {
+        const uData = await usersRes.json();
+        setAdminUsers(uData || {});
+      }
+      const formsRes = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/configuracion_formularios.json');
+      if (formsRes.ok) {
+        const fData = await formsRes.json();
+        setAdminFormularios(fData || {});
+        if (fData) {
+          const keys = Object.keys(fData);
+          if (keys.length > 0) setSelectedAreaEdit(keys[0]);
+        }
+      }
+    } catch (err) {
+      console.error("Error cargando configuración administrativa:", err);
+    }
+  };
+
+  // Guardar cambios en Firebase
+  const saveAdminUsers = async (updatedUsers) => {
+    try {
+      const res = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/usuarios.json', {
+        method: 'PUT',
+        body: JSON.stringify(updatedUsers)
+      });
+      if (res.ok) {
+        setAdminUsers(updatedUsers);
+        alert("Usuarios actualizados con éxito.");
+      }
+    } catch (e) {
+      console.error("Error al guardar usuarios:", e);
+    }
+  };
+
+  const saveAdminFormularios = async (updatedForms) => {
+    try {
+      const res = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/configuracion_formularios.json', {
+        method: 'PUT',
+        body: JSON.stringify(updatedForms)
+      });
+      if (res.ok) {
+        setAdminFormularios(updatedForms);
+        alert("Formularios actualizados con éxito.");
+      }
+    } catch (e) {
+      console.error("Error al guardar formularios:", e);
     }
   };
 
@@ -3889,7 +3988,15 @@ function App() {
               <Database size={14} className={records.length > 0 ? "text-success" : "text-danger"} />
               Total: {records.length > 0 ? `${records.length.toLocaleString('es-ES')} registros` : 'Vacía'}
             </span>
-            <button 
+                        <button 
+              className="settings-btn" 
+              onClick={handleOpenAdmin}
+              title="Administración de Usuarios y Formularios"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Users size={20} />
+            </button>
+<button 
               className="settings-btn" 
               onClick={handleOpenSettings}
               title="Configuración y Carga de Lluvias"
@@ -8068,6 +8175,666 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* Modal Overlay para Administración y Parametrización en Pantalla Completa */}
+      {adminPanelOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 9999,
+          background: 'var(--bg-app)',
+          display: 'flex',
+          flexDirection: 'column',
+          fontFamily: 'var(--font-body)',
+          color: 'var(--text-main)'
+        }}>
+          {/* Header */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '1.25rem 2rem',
+            borderBottom: '1px solid var(--border-light)',
+            background: 'var(--bg-panel)',
+            backdropFilter: 'var(--glass-blur)'
+          }}>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <ShieldCheck size={28} />
+              Administración y Parametrización de Campo
+            </h2>
+            <button 
+              onClick={() => setAdminPanelOpen(false)} 
+              style={{
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid var(--border-light)',
+                borderRadius: '50%',
+                width: '40px',
+                height: '40px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                color: 'var(--text-main)',
+                transition: 'var(--transition-fast)'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 75, 75, 0.1)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          {/* Body container con Tab Sidebar */}
+          <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+            {/* Sidebar */}
+            <div style={{
+              width: '280px',
+              borderRight: '1px solid var(--border-light)',
+              background: 'rgba(0, 0, 0, 0.2)',
+              padding: '2rem 1rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.5rem'
+            }}>
+              {[
+                { id: 'usuarios', label: 'Gestión de Usuarios', icon: <Users size={18} /> },
+                { id: 'formularios', label: 'Creador de Formularios', icon: <Sliders size={18} /> },
+                { id: 'permisos', label: 'Permisos de Formularios', icon: <ShieldCheck size={18} /> }
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setAdminActiveTab(tab.id)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    padding: '0.85rem 1.25rem',
+                    border: 'none',
+                    borderRadius: 'var(--radius-md)',
+                    background: adminActiveTab === tab.id ? 'var(--primary-glow)' : 'transparent',
+                    color: adminActiveTab === tab.id ? 'var(--accent)' : 'var(--text-muted)',
+                    textAlign: 'left',
+                    fontWeight: adminActiveTab === tab.id ? 600 : 500,
+                    cursor: 'pointer',
+                    fontSize: '0.95rem',
+                    transition: 'var(--transition-fast)',
+                    width: '100%'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (adminActiveTab !== tab.id) e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
+                  }}
+                  onMouseLeave={(e) => {
+                    if (adminActiveTab !== tab.id) e.currentTarget.style.background = 'transparent';
+                  }}
+                >
+                  {tab.icon}
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Content Area */}
+            <div style={{ flex: 1, padding: '2.5rem', overflowY: 'auto', background: 'var(--bg-app)' }}>
+              
+              {/* TAB 1: GESTION DE USUARIOS */}
+              {adminActiveTab === 'usuarios' && (
+                <div style={{ display: 'flex', gap: '2.5rem', alignItems: 'flex-start' }}>
+                  {/* Crear usuario */}
+                  <div className="glass-panel" style={{ flex: 1, padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '400px' }}>
+                    <h3 style={{ fontSize: '1.15rem', fontWeight: 600, borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <Plus size={18} className="text-accent" />
+                      Crear Nuevo Usuario
+                    </h3>
+                    <form onSubmit={(e) => {
+                      e.preventDefault();
+                      const uname = newUsername.trim().toLowerCase();
+                      if (!uname || !newPassword || !newArea) {
+                        alert("Por favor llena todos los campos.");
+                        return;
+                      }
+                      if (adminUsers[uname]) {
+                        alert("Este usuario ya existe.");
+                        return;
+                      }
+                      const updated = { ...adminUsers, [uname]: { password: newPassword, area: newArea } };
+                      saveAdminUsers(updated);
+                      setNewUsername('');
+                      setNewPassword('');
+                    }} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                      
+                      <div className="filter-group" style={{ margin: 0 }}>
+                        <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Nombre de Usuario (Operario)</label>
+                        <input
+                          type="text"
+                          required
+                          className="select-control"
+                          value={newUsername}
+                          onChange={(e) => setNewUsername(e.target.value)}
+                          placeholder="Ej: riego2"
+                          style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem', width: '100%' }}
+                        />
+                      </div>
+
+                      <div className="filter-group" style={{ margin: 0 }}>
+                        <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Contraseña</label>
+                        <input
+                          type="text"
+                          required
+                          className="select-control"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          placeholder="Contraseña de acceso"
+                          style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem', width: '100%' }}
+                        />
+                      </div>
+
+                      <div className="filter-group" style={{ margin: 0 }}>
+                        <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Área de Trabajo</label>
+                        <select
+                          className="select-control"
+                          value={newArea}
+                          onChange={(e) => setNewArea(e.target.value)}
+                          style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem', width: '100%', background: 'var(--bg-input)' }}
+                        >
+                          <option value="Sanidad">Sanidad</option>
+                          <option value="Cosecha">Cosecha</option>
+                          <option value="Riego">Riego</option>
+                          <option value="Otros">Otros</option>
+                        </select>
+                      </div>
+
+                      <button type="submit" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', marginTop: '0.5rem' }}>
+                        Crear Usuario
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Lista de usuarios */}
+                  <div className="glass-panel" style={{ flex: 2, padding: '2rem', overflowX: 'auto' }}>
+                    <h3 style={{ fontSize: '1.15rem', fontWeight: 600, marginBottom: '1.25rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
+                      Operarios Registrados
+                    </h3>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid var(--border-light)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                          <th style={{ padding: '0.75rem' }}>Usuario</th>
+                          <th style={{ padding: '0.75rem' }}>Contraseña</th>
+                          <th style={{ padding: '0.75rem' }}>Área</th>
+                          <th style={{ padding: '0.75rem', textAlign: 'right' }}>Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(adminUsers).map(([uname, uinfo]) => (
+                          <tr key={uname} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                            <td style={{ padding: '0.75rem', fontWeight: 600 }}>{uname}</td>
+                            <td style={{ padding: '0.75rem' }}>
+                              <input 
+                                type="text"
+                                className="select-control"
+                                value={uinfo.password}
+                                onChange={(e) => {
+                                  const updated = { ...adminUsers, [uname]: { ...uinfo, password: e.target.value } };
+                                  setAdminUsers(updated);
+                                }}
+                                onBlur={() => saveAdminUsers(adminUsers)}
+                                style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', background: 'transparent', border: '1px dashed var(--border-light)', width: '150px' }}
+                              />
+                            </td>
+                            <td style={{ padding: '0.75rem' }}>
+                              <select
+                                className="select-control"
+                                value={uinfo.area || ''}
+                                onChange={(e) => {
+                                  const updated = { ...adminUsers, [uname]: { ...uinfo, area: e.target.value } };
+                                  setAdminUsers(updated);
+                                  saveAdminUsers(updated);
+                                }}
+                                style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', background: 'var(--bg-input)' }}
+                              >
+                                <option value="Sanidad">Sanidad</option>
+                                <option value="Cosecha">Cosecha</option>
+                                <option value="Riego">Riego</option>
+                                <option value="Otros">Otros</option>
+                              </select>
+                            </td>
+                            <td style={{ padding: '0.75rem', textAlign: 'right' }}>
+                              <button 
+                                className="btn btn-secondary" 
+                                onClick={() => {
+                                  if (uname === 'admin') return alert('No puedes borrar el administrador.');
+                                  if (confirm('¿Borrar usuario ' + uname + '?')) {
+                                    const next = { ...adminUsers };
+                                    delete next[uname];
+                                    saveAdminUsers(next);
+                                  }
+                                }}
+                                disabled={uname === 'admin'}
+                                style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: 'var(--danger)', borderColor: 'rgba(255,75,75,0.2)' }}
+                              >
+                                <Trash2 size={12} />
+                                Eliminar
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: CREADOR DE FORMULARIOS */}
+              {adminActiveTab === 'formularios' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                  {/* Selector de Área */}
+                  <div className="glass-panel" style={{ padding: '1.5rem 2rem', display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
+                    <div className="filter-group" style={{ margin: 0, minWidth: '220px' }}>
+                      <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Seleccionar Área de Trabajo</label>
+                      <select
+                        className="select-control"
+                        value={selectedAreaEdit}
+                        onChange={(e) => {
+                          if (e.target.value === '__new__') {
+                            setShowCustomAreaInput(true);
+                          } else {
+                            setShowCustomAreaInput(false);
+                            setSelectedAreaEdit(e.target.value);
+                            setActiveFormIndexEdit(null);
+                          }
+                        }}
+                        style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem', width: '100%', background: 'var(--bg-input)' }}
+                      >
+                        {Object.keys(adminFormularios).map(area => (
+                          <option key={area} value={area}>{area}</option>
+                        ))}
+                        <option value="__new__">+ Crear Nueva Área...</option>
+                      </select>
+                    </div>
+
+                    {showCustomAreaInput && (
+                      <div className="filter-group" style={{ margin: 0, minWidth: '220px' }}>
+                        <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Nombre de la Nueva Área</label>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <input 
+                            type="text"
+                            className="select-control"
+                            value={customAreaName}
+                            onChange={(e) => setCustomAreaName(e.target.value)}
+                            placeholder="Ej: Riego"
+                            style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem' }}
+                          />
+                          <button 
+                            className="btn btn-primary"
+                            onClick={() => {
+                              const name = customAreaName.trim();
+                              if (!name) return;
+                              const updated = { ...adminFormularios, [name]: { formularios: [] } };
+                              setAdminFormularios(updated);
+                              setSelectedAreaEdit(name);
+                              setShowCustomAreaInput(false);
+                              setCustomAreaName('');
+                              setActiveFormIndexEdit(null);
+                            }}
+                          >
+                            Crear
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
+                      <button 
+                        className="btn btn-primary"
+                        onClick={() => {
+                          const areaForms = adminFormularios[selectedAreaEdit]?.formularios || [];
+                          const newFormObj = {
+                            id: 'form_' + selectedAreaEdit.toLowerCase() + '_' + Date.now(),
+                            titulo: 'Nuevo Formulario ' + selectedAreaEdit,
+                            labels: {
+                              iniciar: 'Iniciar Labor',
+                              finalizar: 'Finalizar Labor'
+                            },
+                            fields: [
+                              { id: 'finca', label: 'Finca', type: 'select', options: ['Finca 01', 'Finca 02'], pinned: true, required: true },
+                              { id: 'lote', label: 'Lote', type: 'text', pinned: true, required: true }
+                            ]
+                          };
+                          const updated = {
+                            ...adminFormularios,
+                            [selectedAreaEdit]: {
+                              formularios: [...areaForms, newFormObj]
+                            }
+                          };
+                          setAdminFormularios(updated);
+                          setActiveFormIndexEdit(areaForms.length);
+                        }}
+                      >
+                        <Plus size={16} />
+                        Crear Nuevo Formulario en {selectedAreaEdit}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Listado y editor de formularios de la área */}
+                  <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start' }}>
+                    {/* Formularios creados */}
+                    <div className="glass-panel" style={{ flex: 1, padding: '1.5rem', maxWidth: '300px', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      <h4 style={{ fontSize: '0.95rem', fontWeight: 600, borderBottom: '1px solid var(--border-light)', paddingBottom: '0.5rem' }}>
+                        Formularios ({selectedAreaEdit})
+                      </h4>
+                      {(adminFormularios[selectedAreaEdit]?.formularios || []).length === 0 ? (
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', margin: 0 }}>No hay formularios creados para esta área.</p>
+                      ) : (
+                        (adminFormularios[selectedAreaEdit]?.formularios || []).map((form, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => setActiveFormIndexEdit(idx)}
+                            style={{
+                              padding: '0.75rem 1rem',
+                              background: activeFormIndexEdit === idx ? 'rgba(0, 242, 254, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                              border: activeFormIndexEdit === idx ? '1px solid var(--accent)' : '1px solid var(--border-light)',
+                              borderRadius: 'var(--radius-sm)',
+                              color: activeFormIndexEdit === idx ? 'var(--accent)' : 'var(--text-main)',
+                              fontWeight: activeFormIndexEdit === idx ? 600 : 500,
+                              fontSize: '0.85rem',
+                              textAlign: 'left',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              width: '100%'
+                            }}
+                          >
+                            <span>{form.titulo}</span>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>({form.fields?.length || 0} campos)</span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Editor del Formulario Seleccionado */}
+                    {activeFormIndexEdit !== null && adminFormularios[selectedAreaEdit]?.formularios?.[activeFormIndexEdit] && (
+                      <div className="glass-panel" style={{ flex: 2, padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                        
+                        {/* Datos Básicos */}
+                        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                          <div className="filter-group" style={{ margin: 0, flex: 2 }}>
+                            <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Título del Formulario</label>
+                            <input 
+                              type="text"
+                              className="select-control"
+                              value={adminFormularios[selectedAreaEdit].formularios[activeFormIndexEdit].titulo}
+                              onChange={(e) => {
+                                const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                nextForms[activeFormIndexEdit].titulo = e.target.value;
+                                setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
+                              }}
+                              style={{ padding: '0.5rem 0.75rem', width: '100%' }}
+                            />
+                          </div>
+
+                          <div className="filter-group" style={{ margin: 0, flex: 1 }}>
+                            <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Texto Botón Iniciar</label>
+                            <input 
+                              type="text"
+                              className="select-control"
+                              value={adminFormularios[selectedAreaEdit].formularios[activeFormIndexEdit].labels?.iniciar || 'Iniciar Labor'}
+                              onChange={(e) => {
+                                const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                if (!nextForms[activeFormIndexEdit].labels) nextForms[activeFormIndexEdit].labels = {};
+                                nextForms[activeFormIndexEdit].labels.iniciar = e.target.value;
+                                setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
+                              }}
+                              style={{ padding: '0.5rem 0.75rem', width: '100%' }}
+                            />
+                          </div>
+
+                          <div className="filter-group" style={{ margin: 0, flex: 1 }}>
+                            <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Texto Botón Finalizar</label>
+                            <input 
+                              type="text"
+                              className="select-control"
+                              value={adminFormularios[selectedAreaEdit].formularios[activeFormIndexEdit].labels?.finalizar || 'Finalizar Labor'}
+                              onChange={(e) => {
+                                const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                if (!nextForms[activeFormIndexEdit].labels) nextForms[activeFormIndexEdit].labels = {};
+                                nextForms[activeFormIndexEdit].labels.finalizar = e.target.value;
+                                setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
+                              }}
+                              style={{ padding: '0.5rem 0.75rem', width: '100%' }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Diseñador de Campos */}
+                        <div>
+                          <h4 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.5rem' }}>
+                            Campos del Formulario
+                          </h4>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                            {(adminFormularios[selectedAreaEdit].formularios[activeFormIndexEdit].fields || []).map((field, fIdx) => (
+                              <div key={fIdx} style={{ display: 'flex', gap: '1rem', alignItems: 'center', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-light)', padding: '1rem', borderRadius: 'var(--radius-sm)', flexWrap: 'wrap' }}>
+                                
+                                {/* Label */}
+                                <div className="filter-group" style={{ margin: 0, flex: 2 }}>
+                                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Etiqueta (Nombre)</label>
+                                  <input 
+                                    type="text"
+                                    className="select-control"
+                                    value={field.label}
+                                    onChange={(e) => {
+                                      const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                      nextForms[activeFormIndexEdit].fields[fIdx].label = e.target.value;
+                                      nextForms[activeFormIndexEdit].fields[fIdx].id = e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '_');
+                                      setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
+                                    }}
+                                    style={{ padding: '0.4rem 0.6rem', width: '100%', fontSize: '0.85rem' }}
+                                  />
+                                </div>
+
+                                {/* Tipo */}
+                                <div className="filter-group" style={{ margin: 0, flex: 1 }}>
+                                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Tipo de Entrada</label>
+                                  <select 
+                                    className="select-control"
+                                    value={field.type}
+                                    onChange={(e) => {
+                                      const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                      nextForms[activeFormIndexEdit].fields[fIdx].type = e.target.value;
+                                      if (e.target.value === 'select' && !field.options) {
+                                        nextForms[activeFormIndexEdit].fields[fIdx].options = ['Opción A', 'Opción B'];
+                                      }
+                                      setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
+                                    }}
+                                    style={{ padding: '0.4rem 0.6rem', width: '100%', fontSize: '0.85rem', background: 'var(--bg-input)' }}
+                                  >
+                                    <option value="text">Texto</option>
+                                    <option value="number">Número</option>
+                                    <option value="select">Selección Desplegable</option>
+                                    <option value="textarea">Área de Texto (Comentario)</option>
+                                  </select>
+                                </div>
+
+                                {/* Candado Pinned */}
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem' }}>
+                                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Fijar (Candado)</span>
+                                  <input 
+                                    type="checkbox"
+                                    checked={field.pinned !== false}
+                                    onChange={(e) => {
+                                      const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                      nextForms[activeFormIndexEdit].fields[fIdx].pinned = e.target.checked;
+                                      setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
+                                    }}
+                                    style={{ width: '18px', height: '18px' }}
+                                  />
+                                </div>
+
+                                {/* Requerido */}
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem' }}>
+                                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Requerido</span>
+                                  <input 
+                                    type="checkbox"
+                                    checked={field.required === true}
+                                    onChange={(e) => {
+                                      const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                      nextForms[activeFormIndexEdit].fields[fIdx].required = e.target.checked;
+                                      setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
+                                    }}
+                                    style={{ width: '18px', height: '18px' }}
+                                  />
+                                </div>
+
+                                {/* Opciones de Select */}
+                                {field.type === 'select' && (
+                                  <div className="filter-group" style={{ margin: 0, flex: '1 1 100%', marginTop: '0.5rem' }}>
+                                    <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Opciones de la Lista (separadas por coma)</label>
+                                    <input 
+                                      type="text"
+                                      className="select-control"
+                                      value={(field.options || []).join(', ')}
+                                      onChange={(e) => {
+                                        const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                        nextForms[activeFormIndexEdit].fields[fIdx].options = e.target.value.split(',').map(o => o.trim()).filter(Boolean);
+                                        setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
+                                      }}
+                                      placeholder="Ej: Finca 01, Finca 02, Finca 03"
+                                      style={{ padding: '0.4rem 0.6rem', width: '100%', fontSize: '0.8rem' }}
+                                    />
+                                  </div>
+                                )}
+
+                                {/* Eliminar campo */}
+                                <button 
+                                  className="btn btn-secondary"
+                                  onClick={() => {
+                                    const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                    nextForms[activeFormIndexEdit].fields.splice(fIdx, 1);
+                                    setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
+                                  }}
+                                  style={{ padding: '0.35rem 0.5rem', color: 'var(--danger)', borderColor: 'rgba(255,75,75,0.2)', marginLeft: 'auto' }}
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            ))}
+
+                            <button 
+                              className="btn btn-secondary"
+                              onClick={() => {
+                                const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                nextForms[activeFormIndexEdit].fields.push({
+                                  id: 'campo_' + Date.now(),
+                                  label: 'Nuevo Campo',
+                                  type: 'text',
+                                  pinned: true,
+                                  required: true
+                                });
+                                setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
+                              }}
+                              style={{ width: 'fit-content', gap: '0.5rem' }}
+                            >
+                              <Plus size={14} />
+                              Agregar Campo al Formulario
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Guardar / Eliminar Formulario */}
+                        <div style={{ display: 'flex', gap: '1rem', borderTop: '1px solid var(--border-light)', paddingTop: '1.25rem', marginTop: '1rem' }}>
+                          <button 
+                            className="btn btn-primary"
+                            onClick={() => saveAdminFormularios(adminFormularios)}
+                          >
+                            Guardar Cambios de Formulario
+                          </button>
+                          
+                          <button 
+                            className="btn btn-secondary"
+                            onClick={() => {
+                              if (confirm("¿Estás seguro de eliminar todo este formulario?")) {
+                                const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                nextForms.splice(activeFormIndexEdit, 1);
+                                const updated = { ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } };
+                                setAdminFormularios(updated);
+                                saveAdminFormularios(updated);
+                                setActiveFormIndexEdit(null);
+                              }
+                            }}
+                            style={{ color: 'var(--danger)', borderColor: 'rgba(255, 75, 75, 0.2)' }}
+                          >
+                            Eliminar Formulario
+                          </button>
+                        </div>
+
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: PERMISOS DE FORMULARIOS */}
+              {adminActiveTab === 'permisos' && (
+                <div className="glass-panel" style={{ padding: '2.5rem' }}>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
+                    Permisos y Áreas de Trabajo por Operario
+                  </h3>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '2rem' }}>
+                    Asigna a qué área pertenece cada operario. Esto definirá los formularios dinámicos a los que tendrán acceso en su celular al iniciar sesión. Si un usuario no tiene un área con formularios activos, solo verá el modo de rastreo GPS básico.
+                  </p>
+                  
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid var(--border-light)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                        <th style={{ padding: '1rem' }}>Operario</th>
+                        <th style={{ padding: '1rem' }}>Área de Trabajo Asignada</th>
+                        <th style={{ padding: '1rem' }}>Formularios Activos Visibles</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(adminUsers).map(([uname, uinfo]) => {
+                        const formsInArea = adminFormularios[uinfo.area]?.formularios || [];
+                        return (
+                          <tr key={uname} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                            <td style={{ padding: '1rem', fontWeight: 600 }}>{uname}</td>
+                            <td style={{ padding: '1rem' }}>
+                              <select
+                                className="select-control"
+                                value={uinfo.area || ''}
+                                onChange={(e) => {
+                                  const updated = { ...adminUsers, [uname]: { ...uinfo, area: e.target.value } };
+                                  setAdminUsers(updated);
+                                  saveAdminUsers(updated);
+                                }}
+                                style={{ padding: '0.4rem 0.8rem', background: 'var(--bg-input)', fontSize: '0.85rem' }}
+                              >
+                                <option value="">-- Sin Área (Rastreo GPS Puro) --</option>
+                                {Object.keys(adminFormularios).map(area => (
+                                  <option key={area} value={area}>{area}</option>
+                                ))}
+                              </select>
+                            </td>
+                            <td style={{ padding: '1rem', color: formsInArea.length > 0 ? 'var(--accent)' : 'var(--text-muted)' }}>
+                              {formsInArea.length > 0 
+                                ? formsInArea.map(f => f.titulo).join(', ') 
+                                : 'Rastreo GPS básico (Ningún formulario asignado)'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {/* Modal de Login de Administrador */}
       {showLoginModal && (
