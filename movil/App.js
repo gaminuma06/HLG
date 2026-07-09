@@ -406,7 +406,7 @@ export default function App() {
               // Limpiar campos no fijados
               const newValues = {};
               if (selectedForm) {
-                selectedForm.fields.forEach(f => {
+                (selectedForm.fields || []).forEach(f => {
                   if (pinnedFields[f.id]) {
                     newValues[f.id] = formValues[f.id]; // Mantener valor fijado
                   } else {
@@ -450,7 +450,7 @@ export default function App() {
 
     // Validar requeridos
     let missingRequired = false;
-    selectedForm.fields.forEach(f => {
+    (selectedForm.fields || []).forEach(f => {
       if (f.required) {
         const val = formValues[f.id];
         if (!val || String(val).trim() === '') {
@@ -492,7 +492,7 @@ export default function App() {
       };
 
       // Inyectar respuestas en el primer nivel del objeto para compatibilidad web
-      selectedForm.fields.forEach(f => {
+      (selectedForm.fields || []).forEach(f => {
         formRecord[f.id] = String(formValues[f.id] || '').trim();
       });
 
@@ -506,7 +506,7 @@ export default function App() {
 
       // Limpieza de campos no fijados
       const nextValues = { ...formValues };
-      selectedForm.fields.forEach(f => {
+      (selectedForm.fields || []).forEach(f => {
         if (!pinnedFields[f.id]) {
           nextValues[f.id] = '';
         }
@@ -699,7 +699,7 @@ export default function App() {
                       setSelectedForm(form);
                       // Inicializar formValues con campos vacíos
                       const initialValues = {};
-                      form.fields.forEach(f => {
+                      (form.fields || []).forEach(f => {
                         initialValues[f.id] = '';
                       });
                       setFormValues(initialValues);
