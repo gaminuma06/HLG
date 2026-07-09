@@ -783,6 +783,13 @@ function App() {
   const [customAreaName, setCustomAreaName] = useState('');
   const [showCustomAreaInput, setShowCustomAreaInput] = useState(false);
   const [optionsInputs, setOptionsInputs] = useState({});
+  const [adminToast, setAdminToast] = useState(null); // { message: '', type: 'success' }
+  const showAdminToast = (msg, type = 'success') => {
+    setAdminToast({ message: msg, type });
+    setTimeout(() => {
+      setAdminToast(null);
+    }, 3000);
+  };
   const [loginUser, setLoginUser] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState(null);
@@ -2040,7 +2047,7 @@ function App() {
       });
       if (res.ok) {
         setAdminUsers(updatedUsers);
-        alert("Usuarios actualizados con éxito.");
+        showAdminToast("Usuarios actualizados con éxito.");
       }
     } catch (e) {
       console.error("Error al guardar usuarios:", e);
@@ -2055,7 +2062,7 @@ function App() {
       });
       if (res.ok) {
         setAdminFormularios(updatedForms);
-        alert("Formularios actualizados con éxito.");
+        showAdminToast("Formularios actualizados con éxito.");
       }
     } catch (e) {
       console.error("Error al guardar formularios:", e);
@@ -8293,11 +8300,11 @@ function App() {
                       e.preventDefault();
                       const uname = newUsername.trim().toLowerCase();
                       if (!uname || !newPassword || !newArea) {
-                        alert("Por favor llena todos los campos.");
+                        showAdminToast("Por favor llena todos los campos.", "error");
                         return;
                       }
                       if (adminUsers[uname]) {
-                        alert("Este usuario ya existe.");
+                        showAdminToast("Este usuario ya existe.", "error");
                         return;
                       }
                       const updated = { ...adminUsers, [uname]: { password: newPassword, area: newArea } };
@@ -8409,7 +8416,7 @@ function App() {
                               <button 
                                 className="btn btn-secondary" 
                                 onClick={() => {
-                                  if (uname === 'admin') return alert('No puedes borrar el administrador.');
+                                  if (uname === 'admin') return showAdminToast("No puedes borrar el administrador.", "error");
                                   if (confirm('¿Borrar usuario ' + uname + '?')) {
                                     const next = { ...adminUsers };
                                     delete next[uname];
@@ -8880,6 +8887,30 @@ function App() {
 
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Toast Flotante de Administración */}
+      {adminToast && (
+        <div style={{
+          position: 'fixed',
+          bottom: '2rem',
+          right: '2rem',
+          zIndex: 100000,
+          background: adminToast.type === 'error' ? 'rgba(255, 75, 75, 0.95)' : 'rgba(0, 242, 254, 0.95)',
+          color: '#051829',
+          padding: '0.85rem 1.5rem',
+          borderRadius: '8px',
+          fontWeight: 'bold',
+          fontSize: '0.95rem',
+          boxShadow: '0 8px 32px rgba(0, 242, 254, 0.25)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          transition: 'all 0.3s ease-in-out'
+        }}>
+          {adminToast.type === 'error' ? '⚠️' : '✓'} {adminToast.message}
         </div>
       )}
 
