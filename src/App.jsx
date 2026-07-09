@@ -9132,34 +9132,65 @@ function App() {
                           </div>
                         </div>
 
-                        {/* Guardar / Eliminar Formulario */}
-                        {isEditable && (
-                          <div style={{ display: 'flex', gap: '1rem', borderTop: '1px solid var(--border-light)', paddingTop: '1.25rem', marginTop: '1rem' }}>
-                            <button 
-                              className="btn btn-primary"
-                              onClick={() => saveAdminFormularios(adminFormularios)}
-                            >
-                              Guardar Cambios de Formulario
-                            </button>
-                            
-                            <button 
-                              className="btn btn-secondary"
-                              onClick={() => {
-                                if (confirm("¿Estás seguro de eliminar todo este formulario?")) {
-                                  const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
-                                  nextForms.splice(activeFormIndexEdit, 1);
-                                  const updated = { ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } };
+                        {/* Guardar / Eliminar / Copiar Formulario */}
+                        <div style={{ display: 'flex', gap: '1rem', borderTop: '1px solid var(--border-light)', paddingTop: '1.25rem', marginTop: '1rem' }}>
+                          {isEditable ? (
+                            <>
+                              <button 
+                                className="btn btn-primary"
+                                onClick={() => saveAdminFormularios(adminFormularios)}
+                              >
+                                Guardar Cambios de Formulario
+                              </button>
+                              
+                              <button 
+                                className="btn btn-secondary"
+                                onClick={() => {
+                                  if (confirm("¿Estás seguro de eliminar todo este formulario?")) {
+                                    const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                    nextForms.splice(activeFormIndexEdit, 1);
+                                    const updated = { ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } };
+                                    setAdminFormularios(updated);
+                                    saveAdminFormularios(updated);
+                                    setActiveFormIndexEdit(null);
+                                  }
+                                }}
+                                style={{ color: 'var(--danger)', borderColor: 'rgba(255, 75, 75, 0.2)' }}
+                              >
+                                Eliminar Formulario
+                              </button>
+                            </>
+                          ) : (
+                            adminRole === 'jefe' && adminArea && (
+                              <button 
+                                className="btn btn-primary"
+                                onClick={() => {
+                                  const formToCopy = adminFormularios[selectedAreaEdit].formularios[activeFormIndexEdit];
+                                  const copiedForm = {
+                                    ...JSON.parse(JSON.stringify(formToCopy)),
+                                    id: 'form_' + adminArea.toLowerCase() + '_' + Date.now(),
+                                    titulo: formToCopy.titulo + ' (Copia)',
+                                    fields: formToCopy.fields || []
+                                  };
+                                  const myAreaForms = adminFormularios[adminArea]?.formularios || [];
+                                  const updated = {
+                                    ...adminFormularios,
+                                    [adminArea]: {
+                                      formularios: [...myAreaForms, copiedForm]
+                                    }
+                                  };
                                   setAdminFormularios(updated);
                                   saveAdminFormularios(updated);
-                                  setActiveFormIndexEdit(null);
-                                }
-                              }}
-                              style={{ color: 'var(--danger)', borderColor: 'rgba(255, 75, 75, 0.2)' }}
-                            >
-                              Eliminar Formulario
-                            </button>
-                          </div>
-                        )}
+                                  showAdminToast(`Formulario copiado con éxito a tu área (${adminArea})`);
+                                  setSelectedAreaEdit(adminArea);
+                                  setActiveFormIndexEdit(myAreaForms.length);
+                                }}
+                              >
+                                Copiar Formulario a mi Área ({adminArea})
+                              </button>
+                            )
+                          )}
+                        </div>
                         </div>
                       );
                     })()}
