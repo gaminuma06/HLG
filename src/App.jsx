@@ -2024,7 +2024,19 @@ function App() {
           loadAdminData();
           setAdminPanelOpen(true);
         } else {
-          setSettingsOpen(true);
+          if (role === 'admin') {
+            setSettingsOpen(true);
+          } else {
+            setIsAdminLoggedIn(false);
+            setAdminRole(null);
+            setAdminArea(null);
+            setLoggedAdminUser('');
+            sessionStorage.removeItem('isAdminLoggedIn');
+            sessionStorage.removeItem('adminRole');
+            sessionStorage.removeItem('adminArea');
+            sessionStorage.removeItem('loggedAdminUser');
+            showAdminToast("Acceso Denegado. Solo el Administrador General puede ingresar a la configuración.", "error");
+          }
         }
         setLoginUser('');
         setLoginPassword('');
@@ -2063,7 +2075,11 @@ function App() {
   // Abrir panel de configuración (o pedir login si no está autenticado)
   const handleOpenSettings = () => {
     if (isAdminLoggedIn) {
-      setSettingsOpen(true);
+      if (adminRole === 'admin') {
+        setSettingsOpen(true);
+      } else {
+        showAdminToast("Acceso Denegado. Solo el Administrador General puede ingresar a la configuración.", "error");
+      }
     } else {
       setLoginError(null);
       setLoginUser('');
