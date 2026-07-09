@@ -33,7 +33,8 @@ import {
   Compass,
   ArrowLeft,
   Play,
-  Pause
+  Pause,
+  GripVertical
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import 'leaflet/dist/leaflet.css';
@@ -799,6 +800,61 @@ function App() {
   const [editingUserKey, setEditingUserKey] = useState(null);
   const [editingUserTempName, setEditingUserTempName] = useState('');
   const [editingUserTempPass, setEditingUserTempPass] = useState('');
+  const [draggedFieldIdx, setDraggedFieldIdx] = useState(null);
+  
+  const getDynamicReadingFields = (reading) => {
+    if (!reading) return { title: 'Lectura de Campo', fields: [] };
+    
+    // Buscar la definición del formulario
+    let matchedForm = null;
+    if (adminFormularios) {
+      for (const area of Object.keys(adminFormularios)) {
+        const forms = adminFormularios[area]?.formularios || [];
+        const found = forms.find(f => f.id === reading.formulario_id);
+        if (found) {
+          matchedForm = found;
+          break;
+        }
+      }
+    }
+    
+    const results = [];
+    if (matchedForm && matchedForm.fields) {
+      matchedForm.fields.forEach(f => {
+        if (reading[f.id] !== undefined) {
+          results.push({ label: f.label, value: reading[f.id] });
+        }
+      });
+    } else {
+      // Fallback a propiedades dinámicas genéricas
+      const systemKeys = ['id', 'usuario', 'formulario_id', 'timestamp', 'gps', 'observacion'];
+      Object.keys(reading).forEach(k => {
+        if (!systemKeys.includes(k) && reading[k] !== undefined && reading[k] !== '') {
+          const label = k.charAt(0).toUpperCase() + k.slice(1).replace(/_/g, ' ');
+          results.push({ label, value: reading[k] });
+        }
+      });
+    }
+    return {
+      title: matchedForm ? matchedForm.titulo : 'Lectura de Campo',
+      fields: results
+    };
+  };
+
+  const handleDropField = (targetIdx) => {
+    if (draggedFieldIdx === null || draggedFieldIdx === targetIdx) return;
+    
+    const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+    const fields = [...(nextForms[activeFormIndexEdit].fields || [])];
+    
+    const [draggedItem] = fields.splice(draggedFieldIdx, 1);
+    fields.splice(targetIdx, 0, draggedItem);
+    
+    nextForms[activeFormIndexEdit].fields = fields;
+    setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
+    setDraggedFieldIdx(null);
+  };
+
   const showAdminToast = (msg, type = 'success') => {
     setAdminToast({ message: msg, type });
     setTimeout(() => {
@@ -5666,10 +5722,20 @@ function App() {
                                   >
                                     <LeafletTooltip permanent={false} direction="top">
                                       <span>
-                                        <strong>Estación: Palma {reading.palma}</strong><br/>
-                                        Lote: {reading.lote} (Lín. {reading.linea})<br/>
-                                        Subsector: {reading.subsector}<br/>
-                                        {reading.observacion ? `Obs: ${reading.observacion}` : ''}
+                                        {(() => {
+                                          const { title, fields } = getDynamicReadingFields(reading);
+                                          return (
+                                            <>
+                                              <strong style={{ color: '#ff9100' }}>{title}</strong><br/>
+                                              {fields.map((f, fIdx) => (
+                                                <React.Fragment key={fIdx}>
+                                                  {f.label}: {f.value}<br/>
+                                                </React.Fragment>
+                                              ))}
+                                              {reading.observacion ? `Obs: ${reading.observacion}` : ''}
+                                            </>
+                                          );
+                                        })()}
                                       </span>
                                     </LeafletTooltip>
                                   </LeafletMarker>
@@ -5940,18 +6006,31 @@ function App() {
                                                 onMouseEnter={(e) => e.currentTarget.style.borderColor = '#ff9100'}
                                                 onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-light)'}
                                               >
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem' }}>
-                                                  <span style={{ color: '#ff9100', fontWeight: 'bold' }}>Finca {reading.finca} · Lote {reading.lote}</span>
-                                                  <span style={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>Palma {reading.palma} · Lín. {reading.linea}</span>
-                                                </div>
-                                                <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.7)' }}>
-                                                  Subsector: <strong style={{ color: '#fff' }}>{reading.subsector}</strong>
-                                                </div>
-                                                {reading.observacion ? (
-                                                  <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.68rem', color: '#fff', background: 'rgba(255,255,255,0.03)', padding: '2px 5px', borderRadius: '3px', fontStyle: 'italic' }}>
-                                                    Obs: {reading.observacion}
-                                                  </p>
-                                                ) : null}
+                                                {(() => {
+                                                  const { title, fields } = getDynamicReadingFields(reading);
+                                                  return (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                                                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem' }}>
+                                                        <span style={{ color: '#ff9100', fontWeight: 'bold' }}>{title}</span>
+                                                        <span style={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>
+                                                          {new Date(reading.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                        </span>
+                                                      </div>
+                                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '0.2rem' }}>
+                                                        {fields.map((df, dfIdx) => (
+                                                          <div key={dfIdx} style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.7)' }}>
+                                                            {df.label}: <strong style={{ color: '#fff' }}>{df.value}</strong>
+                                                          </div>
+                                                        ))}
+                                                      </div>
+                                                      {reading.observacion ? (
+                                                        <div style={{ fontSize: '0.68rem', color: '#ffab40', fontStyle: 'italic', marginTop: '2px' }}>
+                                                          Obs: {reading.observacion}
+                                                        </div>
+                                                      ) : null}
+                                                    </div>
+                                                  );
+                                                })()}
                                               </div>
                                             );
                                           })}
@@ -9008,7 +9087,42 @@ function App() {
                           </h4>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                             {(adminFormularios[selectedAreaEdit].formularios[activeFormIndexEdit].fields || []).map((field, fIdx) => (
-                              <div key={fIdx} style={{ display: 'flex', gap: '1rem', alignItems: 'center', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-light)', padding: '1rem', borderRadius: 'var(--radius-sm)', flexWrap: 'wrap' }}>
+                              <div 
+                                key={field.id || fIdx} 
+                                draggable={isEditable}
+                                onDragStart={(e) => {
+                                  setDraggedFieldIdx(fIdx);
+                                  e.dataTransfer.effectAllowed = 'move';
+                                }}
+                                onDragOver={(e) => e.preventDefault()}
+                                onDrop={() => handleDropField(fIdx)}
+                                style={{ 
+                                  display: 'flex', 
+                                  gap: '1rem', 
+                                  alignItems: 'center', 
+                                  background: draggedFieldIdx === fIdx ? 'rgba(0, 242, 254, 0.05)' : 'rgba(255,255,255,0.01)', 
+                                  border: draggedFieldIdx === fIdx ? '1px dashed var(--accent)' : '1px solid var(--border-light)', 
+                                  padding: '1rem', 
+                                  borderRadius: 'var(--radius-sm)', 
+                                  flexWrap: 'wrap',
+                                  transition: 'all 0.15s ease'
+                                }}
+                              >
+                                {isEditable && (
+                                  <div 
+                                    style={{ 
+                                      cursor: 'grab', 
+                                      display: 'flex', 
+                                      alignItems: 'center', 
+                                      justifyContent: 'center', 
+                                      color: 'var(--text-muted)',
+                                      paddingRight: '0.2rem' 
+                                    }}
+                                    title="Arrastrar para cambiar el orden de este campo"
+                                  >
+                                    <GripVertical size={16} />
+                                  </div>
+                                )}
                                 
                                 {/* Label */}
                                 <div className="filter-group" style={{ margin: 0, flex: 2 }}>
