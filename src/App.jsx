@@ -4195,6 +4195,9 @@ function App() {
                 onChange={(e) => {
                   const val = e.target.value;
                   setCurrentDashboardArea(val);
+                  setSelectedTrackId(null);
+                  setPlaybackIndex(0);
+                  setIsPlaying(false);
                   if (val.toLowerCase() !== 'riego') {
                     setActiveTab('mapas');
                   }
@@ -6217,8 +6220,22 @@ function App() {
                                   // Generar listado unificado de jornadas de operarios (tracks y lecturas)
                                   const list = [];
                                   
+                                  const filteredTracks = mobileTracks.filter(t => {
+                                    const uname = t.usuario?.toLowerCase();
+                                    if (uname === 'admin') return true;
+                                    const uArea = adminUsers[uname]?.area || 'Riego';
+                                    return uArea.toLowerCase() === currentDashboardArea.toLowerCase();
+                                  });
+                                  
+                                  const filteredReadings = mobileReadings.filter(r => {
+                                    const uname = r.usuario?.toLowerCase();
+                                    if (uname === 'admin') return true;
+                                    const uArea = adminUsers[uname]?.area || 'Riego';
+                                    return uArea.toLowerCase() === currentDashboardArea.toLowerCase();
+                                  });
+
                                   // 1. Agregar desde los recorridos GPS existentes
-                                  mobileTracks.forEach(t => {
+                                  filteredTracks.forEach(t => {
                                     const dateStr = new Date(t.timestamp).toDateString();
                                     list.push({
                                       id: t.id,
@@ -6231,7 +6248,7 @@ function App() {
                                   });
 
                                   // 2. Agregar desde las lecturas de campo que no tengan track directo
-                                  mobileReadings.forEach(r => {
+                                  filteredReadings.forEach(r => {
                                     const dateStr = new Date(r.timestamp).toDateString();
                                     const match = list.find(item => item.usuario === r.usuario && item.dateStr === dateStr);
                                     if (!match) {
