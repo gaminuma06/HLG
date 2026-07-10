@@ -9240,37 +9240,47 @@ function App() {
                     )}
 
                     <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
-                      {(adminRole === 'admin' || (adminRole === 'jefe' && selectedAreaEdit === adminArea)) && (
-                        <button 
-                          className="btn btn-primary"
-                          onClick={() => {
-                            const areaForms = adminFormularios[selectedAreaEdit]?.formularios || [];
-                            const newFormObj = {
-                              id: 'form_' + selectedAreaEdit.toLowerCase() + '_' + Date.now(),
-                              titulo: 'Nuevo Formulario ' + selectedAreaEdit,
-                              labels: {
-                                iniciar: 'Iniciar Labor',
-                                finalizar: 'Finalizar Labor'
-                              },
-                              fields: [
-                                { id: 'finca', label: 'Finca', type: 'select', options: ['Finca 01', 'Finca 02'], pinned: true, required: true },
-                                { id: 'lote', label: 'Lote', type: 'text', pinned: true, required: true }
-                              ]
-                            };
-                            const updated = {
-                              ...adminFormularios,
-                              [selectedAreaEdit]: {
-                                formularios: [...areaForms, newFormObj]
-                              }
-                            };
-                            setAdminFormularios(updated);
-                            setActiveFormIndexEdit(areaForms.length);
-                          }}
-                        >
-                          <Plus size={16} />
-                          Crear Nuevo Formulario en {selectedAreaEdit}
-                        </button>
-                      )}
+                      {(() => {
+                        const curJefeInfo = adminUsers[loggedAdminUser?.toLowerCase()];
+                        const jefeAreas = curJefeInfo?.areas_acceso && curJefeInfo.areas_acceso.length > 0
+                          ? curJefeInfo.areas_acceso
+                          : [adminArea || curJefeInfo?.area].filter(Boolean);
+                        const canCreate = adminRole === 'admin' || (adminRole === 'jefe' && jefeAreas.includes(selectedAreaEdit));
+                        
+                        if (!canCreate) return null;
+                        return (
+                          <button 
+                            className="btn btn-primary"
+                            onClick={() => {
+                              const areaForms = adminFormularios[selectedAreaEdit]?.formularios || [];
+                              const newFormObj = {
+                                id: 'form_' + selectedAreaEdit.toLowerCase() + '_' + Date.now(),
+                                titulo: 'Nuevo Formulario ' + selectedAreaEdit,
+                                labels: {
+                                  iniciar: 'Iniciar Labor',
+                                  finalizar: 'Finalizar Labor'
+                                },
+                                fincas: ['Todas'],
+                                fields: [
+                                  { id: 'finca', label: 'Finca', type: 'select', options: ['Finca 01', 'Finca 02'], pinned: true, required: true },
+                                  { id: 'lote', label: 'Lote', type: 'text', pinned: true, required: true }
+                                ]
+                              };
+                              const updated = {
+                                ...adminFormularios,
+                                [selectedAreaEdit]: {
+                                  formularios: [...areaForms, newFormObj]
+                                }
+                              };
+                              setAdminFormularios(updated);
+                              setActiveFormIndexEdit(areaForms.length);
+                            }}
+                          >
+                            <Plus size={16} />
+                            Crear Nuevo Formulario en {selectedAreaEdit}
+                          </button>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -9313,7 +9323,11 @@ function App() {
 
                     {/* Editor del Formulario Seleccionado */}
                     {activeFormIndexEdit !== null && adminFormularios[selectedAreaEdit]?.formularios?.[activeFormIndexEdit] && (() => {
-                      const isEditable = adminRole === 'admin' || (adminRole === 'jefe' && selectedAreaEdit === adminArea);
+                      const curJefeInfo = adminUsers[loggedAdminUser?.toLowerCase()];
+                      const jefeAreas = curJefeInfo?.areas_acceso && curJefeInfo.areas_acceso.length > 0
+                        ? curJefeInfo.areas_acceso
+                        : [adminArea || curJefeInfo?.area].filter(Boolean);
+                      const isEditable = adminRole === 'admin' || (adminRole === 'jefe' && jefeAreas.includes(selectedAreaEdit));
                       
                       return (
                         <div className="glass-panel" style={{ flex: 2, padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -9353,6 +9367,61 @@ function App() {
                               disabled={!isEditable}
                               style={{ padding: '0.5rem 0.75rem', width: '100%' }}
                             />
+                          </div>
+
+                          {/* Fincas Aplicables del Formulario */}
+                          <div className="filter-group" style={{ margin: 0, flex: '1 1 100%' }}>
+                            <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Fincas Aplicables</label>
+                            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
+                              {['Todas', 'HLG', 'HSL', 'TUC'].map(f => {
+                                const formObj = adminFormularios[selectedAreaEdit].formularios[activeFormIndexEdit];
+                                const currentFincas = formObj.fincas || ['Todas'];
+                                const checked = f === 'Todas' 
+                                  ? currentFincas.includes('Todas') || currentFincas.length === 0
+                                  : currentFincas.includes(f);
+
+                                return (
+                                  <label
+                                    key={f}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '0.4rem',
+                                      fontSize: '0.85rem',
+                                      cursor: isEditable ? 'pointer' : 'default',
+                                      color: checked ? 'var(--accent)' : 'var(--text-muted)'
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      disabled={!isEditable}
+                                      checked={checked}
+                                      onChange={() => {
+                                        let nextFincas = [...currentFincas];
+                                        if (f === 'Todas') {
+                                          nextFincas = ['Todas'];
+                                        } else {
+                                          nextFincas = nextFincas.filter(x => x !== 'Todas');
+                                          if (nextFincas.includes(f)) {
+                                            nextFincas = nextFincas.filter(x => x !== f);
+                                          } else {
+                                            nextFincas.push(f);
+                                          }
+                                          if (nextFincas.length === 0) {
+                                            nextFincas = ['Todas'];
+                                          }
+                                        }
+                                        const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                        nextForms[activeFormIndexEdit].fincas = nextFincas;
+                                        setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
+                                      }}
+                                      style={{ cursor: isEditable ? 'pointer' : 'default', accentColor: 'var(--accent)' }}
+                                    />
+                                    {f}
+                                  </label>
+                                );
+                              })}
+                            </div>
                           </div>
 
                           <div className="filter-group" style={{ margin: 0, flex: 1 }}>
