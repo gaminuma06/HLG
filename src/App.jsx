@@ -6217,19 +6217,8 @@ function App() {
                                   // Generar listado unificado de jornadas de operarios (tracks y lecturas)
                                   const list = [];
                                   
-                                  // Filtrar por área seleccionada
-                                  const filteredTracks = mobileTracks.filter(t => {
-                                    const uArea = adminUsers[t.usuario?.toLowerCase()]?.area || 'Riego';
-                                    return uArea.toLowerCase() === currentDashboardArea.toLowerCase();
-                                  });
-                                  
-                                  const filteredReadings = mobileReadings.filter(r => {
-                                    const uArea = adminUsers[r.usuario?.toLowerCase()]?.area || 'Riego';
-                                    return uArea.toLowerCase() === currentDashboardArea.toLowerCase();
-                                  });
-                                  
                                   // 1. Agregar desde los recorridos GPS existentes
-                                  filteredTracks.forEach(t => {
+                                  mobileTracks.forEach(t => {
                                     const dateStr = new Date(t.timestamp).toDateString();
                                     list.push({
                                       id: t.id,
@@ -6242,7 +6231,7 @@ function App() {
                                   });
 
                                   // 2. Agregar desde las lecturas de campo que no tengan track directo
-                                  filteredReadings.forEach(r => {
+                                  mobileReadings.forEach(r => {
                                     const dateStr = new Date(r.timestamp).toDateString();
                                     const match = list.find(item => item.usuario === r.usuario && item.dateStr === dateStr);
                                     if (!match) {
