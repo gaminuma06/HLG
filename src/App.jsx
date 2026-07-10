@@ -804,6 +804,51 @@ function App() {
   const [draggedFieldIdx, setDraggedFieldIdx] = useState(null);
   const [permisosModalUser, setPermisosModalUser] = useState(null); // nombre del usuario cuyo modal de permisos está abierto
   const [permisosTemp, setPermisosTemp] = useState({ fincas: [], areas_acceso: [] }); // estado local temporal del modal
+  const [newCreatedUserFincas, setNewCreatedUserFincas] = useState([]); // fincas seleccionadas para el nuevo operario
+
+  const canJefeManageUser = (jefeUname, operarioUinfo) => {
+    if (adminRole === 'admin') return true;
+    if (!jefeUname) return false;
+    const curJefeInfo = adminUsers[jefeUname.toLowerCase()];
+    if (!curJefeInfo) return false;
+    
+    // No puede gestionar administradores u otros jefes
+    if (operarioUinfo.role === 'admin' || operarioUinfo.role === 'jefe') return false;
+
+    // Verificar Área
+    const jefeAreas = curJefeInfo.areas_acceso && curJefeInfo.areas_acceso.length > 0
+      ? curJefeInfo.areas_acceso.map(a => a.toLowerCase())
+      : [curJefeInfo.area || adminArea].filter(Boolean).map(a => a.toLowerCase());
+      
+    const opArea = (operarioUinfo.area || '').toLowerCase();
+    if (!jefeAreas.includes(opArea)) return false;
+
+    // Verificar Finca
+    const jefeFincas = curJefeInfo.fincas || [];
+    if (jefeFincas.length === 0) return true; // Si el jefe no tiene fincas restringidas en su perfil, ve todo
+
+    const opFincas = Array.isArray(operarioUinfo.fincas)
+      ? operarioUinfo.fincas
+      : (operarioUinfo.finca ? [operarioUinfo.finca] : []);
+      
+    if (opFincas.length === 0) return true; // Si el operario no tiene finca aún, lo ve
+
+    return opFincas.some(f => jefeFincas.includes(f));
+  };
+
+  // Mantener newArea sincronizado con las áreas permitidas del jefe/admin
+  useEffect(() => {
+    const curJefeInfo = adminUsers[loggedAdminUser?.toLowerCase()];
+    const availableAreas = adminRole === 'admin'
+      ? adminAreasList
+      : (curJefeInfo?.areas_acceso && curJefeInfo.areas_acceso.length > 0
+          ? curJefeInfo.areas_acceso
+          : [adminArea || curJefeInfo?.area].filter(Boolean));
+
+    if (availableAreas.length > 0 && !availableAreas.includes(newArea)) {
+      setNewArea(availableAreas[0]);
+    }
+  }, [adminRole, loggedAdminUser, adminUsers, adminAreasList]);
   
   const getDynamicReadingFields = (reading) => {
     if (!reading) return { title: 'Lectura de Campo', fields: [] };
@@ -8675,11 +8720,31 @@ function App() {
                     <form onSubmit={(e) => {
                       e.preventDefault();
                       const uname = newUsername.trim().toLowerCase();
-                      const areaToSave = adminRole === 'jefe' ? adminArea : newArea;
+                      const curJefeInfo = adminUsers[loggedAdminUser?.toLowerCase()];
+                      const availableAreasToCreate = adminRole === 'admin'
+                        ? adminAreasList
+                        : (curJefeInfo?.areas_acceso && curJefeInfo.areas_acceso.length > 0
+                            ? curJefeInfo.areas_acceso
+                            : [adminArea || curJefeInfo?.area].filter(Boolean));
+
+                      const areaToSave = adminRole === 'admin'
+                        ? newArea
+                        : (availableAreasToCreate.length > 1 ? newArea : availableAreasToCreate[0]);
+
                       const roleToSave = adminRole === 'jefe' ? 'operario' : (e.target.newUserRole?.value || 'operario');
+
+                      const creatorFincas = adminRole === 'admin' ? ['HLG', 'HSL', 'TUC'] : (curJefeInfo?.fincas || []);
+                      const finalAvailableFincas = creatorFincas.length > 0 ? creatorFincas : ['HLG', 'HSL', 'TUC'];
+                      const fincasToSave = finalAvailableFincas.length === 1
+                        ? [finalAvailableFincas[0]]
+                        : newCreatedUserFincas;
 
                       if (!uname || !newPassword || !areaToSave) {
                         showAdminToast("Por favor llena todos los campos.", "error");
+                        return;
+                      }
+                      if (fincasToSave.length === 0) {
+                        showAdminToast("Debe asignar al menos una finca al usuario.", "error");
                         return;
                       }
                       if (adminUsers[uname]) {
@@ -8692,12 +8757,15 @@ function App() {
                           password: newPassword, 
                           area: areaToSave, 
                           role: roleToSave,
+                          fincas: fincasToSave,
+                          finca: fincasToSave.length === 1 ? fincasToSave[0] : (fincasToSave.length === 3 ? 'Ambas' : fincasToSave[0] || 'Ambas'),
                           status: 'activo'
                         } 
                       };
                       saveAdminUsers(updated);
                       setNewUsername('');
                       setNewPassword('');
+                      setNewCreatedUserFincas([]);
                     }} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                       
                       <div className="filter-group" style={{ margin: 0 }}>
@@ -8726,21 +8794,86 @@ function App() {
                         />
                       </div>
 
-                      {adminRole === 'admin' && (
-                        <div className="filter-group" style={{ margin: 0 }}>
-                          <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Área de Trabajo</label>
-                          <select
-                            className="select-control"
-                            value={newArea}
-                            onChange={(e) => setNewArea(e.target.value)}
-                            style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem', width: '100%', background: 'var(--bg-input)' }}
-                          >
-                            {adminAreasList.map(areaOpt => (
-                              <option key={areaOpt} value={areaOpt}>{areaOpt}</option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
+                      {/* Selector de Área condicional */}
+                      {(() => {
+                        const curJefeInfo = adminUsers[loggedAdminUser?.toLowerCase()];
+                        const availableAreasToCreate = adminRole === 'admin'
+                          ? adminAreasList
+                          : (curJefeInfo?.areas_acceso && curJefeInfo.areas_acceso.length > 0
+                              ? curJefeInfo.areas_acceso
+                              : [adminArea || curJefeInfo?.area].filter(Boolean));
+
+                        if (adminRole === 'admin' || availableAreasToCreate.length > 1) {
+                          return (
+                            <div className="filter-group" style={{ margin: 0 }}>
+                              <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Área de Trabajo</label>
+                              <select
+                                className="select-control"
+                                value={newArea}
+                                onChange={(e) => setNewArea(e.target.value)}
+                                style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem', width: '100%', background: 'var(--bg-input)' }}
+                              >
+                                {availableAreasToCreate.map(areaOpt => (
+                                  <option key={areaOpt} value={areaOpt}>{areaOpt}</option>
+                                ))}
+                              </select>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
+
+                      {/* Selector de Fincas condicional */}
+                      {(() => {
+                        const curJefeInfo = adminUsers[loggedAdminUser?.toLowerCase()];
+                        const creatorFincas = adminRole === 'admin' ? ['HLG', 'HSL', 'TUC'] : (curJefeInfo?.fincas || []);
+                        const finalAvailableFincas = creatorFincas.length > 0 ? creatorFincas : ['HLG', 'HSL', 'TUC'];
+
+                        if (finalAvailableFincas.length > 1) {
+                          return (
+                            <div className="filter-group" style={{ margin: 0 }}>
+                              <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Fincas Permitidas</label>
+                              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
+                                {finalAvailableFincas.map(f => {
+                                  const checked = newCreatedUserFincas.includes(f);
+                                  return (
+                                    <label
+                                      key={f}
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.4rem',
+                                        fontSize: '0.85rem',
+                                        cursor: 'pointer',
+                                        color: checked ? 'var(--accent)' : 'var(--text-muted)'
+                                      }}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={() => {
+                                          setNewCreatedUserFincas(prev => 
+                                            prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f]
+                                          );
+                                        }}
+                                        style={{ cursor: 'pointer', accentColor: 'var(--accent)' }}
+                                      />
+                                      {f}
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        } else if (finalAvailableFincas.length === 1) {
+                          return (
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                              Finca asignada automáticamente: <strong>{finalAvailableFincas[0]}</strong>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
 
                       {adminRole === 'admin' && (
                         <div className="filter-group" style={{ margin: 0 }}>
@@ -8780,8 +8913,7 @@ function App() {
                         {Object.entries(adminUsers)
                           .filter(([uname, uinfo]) => {
                             if (adminRole === 'admin') return true;
-                            // Jefes solo ven operarios de su propia área
-                            return uinfo.area === adminArea && uinfo.role !== 'admin' && uinfo.role !== 'jefe';
+                            return canJefeManageUser(loggedAdminUser, uinfo);
                           })
                           .sort((a, b) => a[0].localeCompare(b[0]))
                           .map(([uname, uinfo]) => {
@@ -8790,8 +8922,8 @@ function App() {
                             const isEliminating = uinfo.status === 'eliminando';
                             const isEditing = editingUserKey === uname;
                             
-                            // Permiso de edición: Admin puede editar a todos; Jefe solo a operarios de su área.
-                            const isUserEditable = adminRole === 'admin' || (adminRole === 'jefe' && uinfo.area === adminArea && uinfo.role !== 'admin' && uinfo.role !== 'jefe');
+                            // Permiso de edición: Admin puede editar a todos; Jefe solo a los que tiene permitido gestionar.
+                            const isUserEditable = adminRole === 'admin' || (adminRole === 'jefe' && canJefeManageUser(loggedAdminUser, uinfo));
 
                             let daysLeft = 90;
                             if (isEliminating && uinfo.deletion_start_date) {
