@@ -795,6 +795,7 @@ function App() {
   const [adminArea, setAdminArea] = useState(() => sessionStorage.getItem('adminArea') || null);
   const [loggedAdminUser, setLoggedAdminUser] = useState(() => sessionStorage.getItem('loggedAdminUser') || '');
   const [adminAreasList, setAdminAreasList] = useState(["Sanidad", "Cosecha", "Riego", "Otros"]);
+  const [currentDashboardArea, setCurrentDashboardArea] = useState('Riego');
   const [userToDeleteTotal, setUserToDeleteTotal] = useState(null);
   const [deleteTotalConfirmInput, setDeleteTotalConfirmInput] = useState('');
   const [editingUserKey, setEditingUserKey] = useState(null);
@@ -1751,6 +1752,38 @@ function App() {
       setMobileReadings(cloudReadings);
     } catch (firebaseReadingsErr) {
       console.warn("Fallo al descargar lecturas de campo:", firebaseReadingsErr);
+    }
+
+    try {
+      const usersRes = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/usuarios.json');
+      if (usersRes.ok) {
+        const uData = await usersRes.json();
+        setAdminUsers(uData || {});
+      }
+    } catch (usersErr) {
+      console.warn("Fallo al descargar usuarios en inicio:", usersErr);
+    }
+
+    try {
+      const areasRes = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/areas.json');
+      if (areasRes.ok) {
+        const aData = await areasRes.json();
+        if (Array.isArray(aData)) {
+          setAdminAreasList(aData);
+        }
+      }
+    } catch (areasErr) {
+      console.warn("Fallo al descargar areas en inicio:", areasErr);
+    }
+
+    try {
+      const formsRes = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/configuracion_formularios.json');
+      if (formsRes.ok) {
+        const fData = await formsRes.json();
+        setAdminFormularios(fData || {});
+      }
+    } catch (formsErr) {
+      console.warn("Fallo al descargar configuración de formularios en inicio:", formsErr);
     } finally {
       setLoading(false);
       setLoadingSource('');
@@ -4148,10 +4181,48 @@ function App() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-            <span className="glass-panel" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Server size={14} className="text-success" />
-              Nube Firebase: Activa
-            </span>
+            <div style={{ position: 'relative', display: 'inline-block' }}>
+              <select
+                value={currentDashboardArea}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setCurrentDashboardArea(val);
+                  if (val.toLowerCase() !== 'riego') {
+                    setActiveTab('mapas');
+                  }
+                }}
+                style={{
+                  padding: '0.5rem 2.2rem 0.5rem 1rem',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid var(--border-light)',
+                  color: '#fff',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                  outline: 'none',
+                  transition: 'all 0.2s ease',
+                  appearance: 'none',
+                  minWidth: '160px'
+                }}
+                className="select-control"
+              >
+                {adminAreasList.map((areaOpt, idx) => (
+                  <option key={idx} value={areaOpt} style={{ background: 'var(--bg-card)', color: '#fff' }}>
+                    Área: {areaOpt}
+                  </option>
+                ))}
+              </select>
+              <span style={{
+                position: 'absolute',
+                right: '12px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                pointerEvents: 'none',
+                fontSize: '0.65rem',
+                color: 'var(--accent)'
+              }}>▼</span>
+            </div>
             <span className="glass-panel" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <Database size={14} className={records.length > 0 ? "text-success" : "text-danger"} />
               Total: {records.length > 0 ? `${records.length.toLocaleString('es-ES')} registros` : 'Vacía'}
@@ -4234,7 +4305,7 @@ function App() {
         </header>
 
         {/* Contenedor de Pestañas y Contenido para eliminar el espacio vacío y permitir fusión tipo carpeta */}
-        <div className="tab-container" style={{ display: 'flex', flexDirection: 'column' }}>
+        <div key={currentDashboardArea} className="tab-container area-transition-active" style={{ display: 'flex', flexDirection: 'column' }}>
           
           {errorMessage && (
             <div style={{
@@ -4258,20 +4329,24 @@ function App() {
           
           {/* Pestañas de navegación */}
           <nav className="tab-navigation">
-            <button 
-              className={`tab-btn ${activeTab === 'pluviometrico' ? 'active' : ''}`}
-              onClick={() => setActiveTab('pluviometrico')}
-            >
-              <CloudRain size={15} />
-              Monitoreo Pluviómetro
-            </button>
-            <button 
-              className={`tab-btn ${activeTab === 'balance' ? 'active' : ''}`}
-              onClick={() => setActiveTab('balance')}
-            >
-              <Layers size={15} />
-              Balance
-            </button>
+            {currentDashboardArea.toLowerCase() === 'riego' && (
+              <>
+                <button 
+                  className={`tab-btn ${activeTab === 'pluviometrico' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('pluviometrico')}
+                >
+                  <CloudRain size={15} />
+                  Monitoreo Pluviómetro
+                </button>
+                <button 
+                  className={`tab-btn ${activeTab === 'balance' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('balance')}
+                >
+                  <Layers size={15} />
+                  Balance
+                </button>
+              </>
+            )}
             <button 
               className={`tab-btn ${activeTab === 'mapas' ? 'active' : ''}`}
               onClick={() => setActiveTab('mapas')}
@@ -6134,8 +6209,19 @@ function App() {
                                   // Generar listado unificado de jornadas de operarios (tracks y lecturas)
                                   const list = [];
                                   
+                                  // Filtrar por área seleccionada
+                                  const filteredTracks = mobileTracks.filter(t => {
+                                    const uArea = adminUsers[t.usuario?.toLowerCase()]?.area || 'Riego';
+                                    return uArea.toLowerCase() === currentDashboardArea.toLowerCase();
+                                  });
+                                  
+                                  const filteredReadings = mobileReadings.filter(r => {
+                                    const uArea = adminUsers[r.usuario?.toLowerCase()]?.area || 'Riego';
+                                    return uArea.toLowerCase() === currentDashboardArea.toLowerCase();
+                                  });
+                                  
                                   // 1. Agregar desde los recorridos GPS existentes
-                                  mobileTracks.forEach(t => {
+                                  filteredTracks.forEach(t => {
                                     const dateStr = new Date(t.timestamp).toDateString();
                                     list.push({
                                       id: t.id,
@@ -6148,7 +6234,7 @@ function App() {
                                   });
 
                                   // 2. Agregar desde las lecturas de campo que no tengan track directo
-                                  mobileReadings.forEach(r => {
+                                  filteredReadings.forEach(r => {
                                     const dateStr = new Date(r.timestamp).toDateString();
                                     const match = list.find(item => item.usuario === r.usuario && item.dateStr === dateStr);
                                     if (!match) {
