@@ -4156,6 +4156,36 @@ function App() {
               <Database size={14} className={records.length > 0 ? "text-success" : "text-danger"} />
               Total: {records.length > 0 ? `${records.length.toLocaleString('es-ES')} registros` : 'Vacía'}
             </span>
+            <a 
+              href={`${import.meta.env.BASE_URL}application-f4eec3c3-296a-4e9e-9857-9491f1d71635.apk`}
+              download="balance-hidrico-movil.apk"
+              className="glass-panel" 
+              style={{ 
+                padding: '0.5rem 1rem', 
+                fontSize: '0.85rem', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '0.5rem',
+                textDecoration: 'none',
+                color: 'var(--accent)',
+                borderColor: 'rgba(0, 242, 254, 0.25)',
+                transition: 'all 0.2s ease',
+                cursor: 'pointer'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(0, 242, 254, 0.1)';
+                e.currentTarget.style.borderColor = 'var(--accent)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.borderColor = 'rgba(0, 242, 254, 0.25)';
+              }}
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style={{ marginRight: '2px' }}>
+                <path d="M17.523 15.3l1.816 3.146a.5.5 0 1 1-.866.5l-1.836-3.18a10.425 10.425 0 0 1-9.274 0l-1.836 3.18a.5.5 0 1 1-.866-.5L6.477 15.3c-2.918-2.017-4.736-5.267-4.47-8.914a.458.458 0 0 1 .012-.083.5.5 0 0 1 .494-.41h19.866a.5.5 0 0 1 .494.41c.004.027.008.056.012.083.266 3.647-1.552 6.897-4.47 8.914M7 9.5a1 1 0 1 0 0 2 1 1 0 0 0 0-2m10 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2" />
+              </svg>
+              Descargar App (Android)
+            </a>
                         <button 
               className="settings-btn" 
               onClick={handleOpenAdmin}
