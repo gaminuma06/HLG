@@ -9253,6 +9253,9 @@ function App() {
                             className="btn btn-primary"
                             onClick={() => {
                               const areaForms = adminFormularios[selectedAreaEdit]?.formularios || [];
+                              const creatorFincas = adminRole === 'admin' ? ['HLG', 'HSL', 'TUC'] : (curJefeInfo?.fincas || []);
+                              const defaultFincas = creatorFincas.length === 1 ? [creatorFincas[0]] : ['Todas'];
+
                               const newFormObj = {
                                 id: 'form_' + selectedAreaEdit.toLowerCase() + '_' + Date.now(),
                                 titulo: 'Nuevo Formulario ' + selectedAreaEdit,
@@ -9260,7 +9263,7 @@ function App() {
                                   iniciar: 'Iniciar Labor',
                                   finalizar: 'Finalizar Labor'
                                 },
-                                fincas: ['Todas'],
+                                fincas: defaultFincas,
                                 fields: [
                                   { id: 'finca', label: 'Finca', type: 'select', options: ['Finca 01', 'Finca 02'], pinned: true, required: true },
                                   { id: 'lote', label: 'Lote', type: 'text', pinned: true, required: true }
@@ -9328,7 +9331,16 @@ function App() {
                         ? curJefeInfo.areas_acceso
                         : [adminArea || curJefeInfo?.area].filter(Boolean);
                       const isEditable = adminRole === 'admin' || (adminRole === 'jefe' && jefeAreas.includes(selectedAreaEdit));
+                      const creatorFincas = adminRole === 'admin' ? ['HLG', 'HSL', 'TUC'] : (curJefeInfo?.fincas || []);
                       
+                      // Forzar al formulario a heredar la finca del jefe si este solo tiene acceso a una
+                      if (creatorFincas.length === 1 && isEditable) {
+                        const formObj = adminFormularios[selectedAreaEdit].formularios[activeFormIndexEdit];
+                        if (!formObj.fincas || formObj.fincas.length !== 1 || formObj.fincas[0] !== creatorFincas[0]) {
+                          formObj.fincas = [creatorFincas[0]];
+                        }
+                      }
+
                       return (
                         <div className="glass-panel" style={{ flex: 2, padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                           
@@ -9376,9 +9388,26 @@ function App() {
                               {['Todas', 'HLG', 'HSL', 'TUC'].map(f => {
                                 const formObj = adminFormularios[selectedAreaEdit].formularios[activeFormIndexEdit];
                                 const currentFincas = formObj.fincas || ['Todas'];
-                                const checked = f === 'Todas' 
-                                  ? currentFincas.includes('Todas') || currentFincas.length === 0
-                                  : currentFincas.includes(f);
+                                
+                                // Determinar si está checked
+                                let checked = false;
+                                if (creatorFincas.length === 1) {
+                                  checked = (f === creatorFincas[0]);
+                                } else {
+                                  checked = f === 'Todas' 
+                                    ? currentFincas.includes('Todas') || currentFincas.length === 0
+                                    : currentFincas.includes(f);
+                                }
+
+                                // Determinar si está deshabilitado
+                                let isFincaCheckboxDisabled = !isEditable;
+                                if (creatorFincas.length === 1) {
+                                  isFincaCheckboxDisabled = true; // Forzado a solo lectura ya que el jefe está bloqueado a su finca única
+                                } else {
+                                  if (f !== 'Todas' && !creatorFincas.includes(f)) {
+                                    isFincaCheckboxDisabled = true; // Jefe con múltiples fincas no puede elegir fincas ajenas
+                                  }
+                                }
 
                                 return (
                                   <label
@@ -9388,13 +9417,14 @@ function App() {
                                       alignItems: 'center',
                                       gap: '0.4rem',
                                       fontSize: '0.85rem',
-                                      cursor: isEditable ? 'pointer' : 'default',
-                                      color: checked ? 'var(--accent)' : 'var(--text-muted)'
+                                      cursor: isFincaCheckboxDisabled ? 'default' : 'pointer',
+                                      color: checked ? 'var(--accent)' : 'var(--text-muted)',
+                                      opacity: isFincaCheckboxDisabled && !checked ? 0.4 : 1
                                     }}
                                   >
                                     <input
                                       type="checkbox"
-                                      disabled={!isEditable}
+                                      disabled={isFincaCheckboxDisabled}
                                       checked={checked}
                                       onChange={() => {
                                         let nextFincas = [...currentFincas];
@@ -9415,7 +9445,7 @@ function App() {
                                         nextForms[activeFormIndexEdit].fincas = nextFincas;
                                         setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
                                       }}
-                                      style={{ cursor: isEditable ? 'pointer' : 'default', accentColor: 'var(--accent)' }}
+                                      style={{ cursor: isFincaCheckboxDisabled ? 'default' : 'pointer', accentColor: 'var(--accent)' }}
                                     />
                                     {f}
                                   </label>
