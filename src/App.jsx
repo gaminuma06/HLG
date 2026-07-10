@@ -1768,8 +1768,12 @@ function App() {
       const areasRes = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/areas.json');
       if (areasRes.ok) {
         const aData = await areasRes.json();
-        if (Array.isArray(aData)) {
-          setAdminAreasList(aData);
+        if (aData) {
+          if (Array.isArray(aData)) {
+            setAdminAreasList(aData.filter(Boolean));
+          } else if (typeof aData === 'object') {
+            setAdminAreasList(Object.values(aData).filter(Boolean));
+          }
         }
       }
     } catch (areasErr) {
@@ -2204,8 +2208,12 @@ function App() {
       const areasRes = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/areas.json');
       if (areasRes.ok) {
         const aData = await areasRes.json();
-        if (Array.isArray(aData)) {
-          setAdminAreasList(aData);
+        if (aData) {
+          if (Array.isArray(aData)) {
+            setAdminAreasList(aData.filter(Boolean));
+          } else if (typeof aData === 'object') {
+            setAdminAreasList(Object.values(aData).filter(Boolean));
+          }
         }
       }
 
