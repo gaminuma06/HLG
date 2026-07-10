@@ -5295,8 +5295,8 @@ function App() {
                         </select>
                       </div>
 
-                      {/* Filtro Pluviómetro */}
-                      <div className="filter-group" style={{ minWidth: '160px', margin: 0 }}>
+                      {/* Filtro Pluviómetro — solo para Riego */}
+                      {currentDashboardArea.toLowerCase() === 'riego' && <div className="filter-group" style={{ minWidth: '160px', margin: 0 }}>
                         <label htmlFor="map-pluv-select" style={{ fontSize: '0.75rem', marginBottom: '0.2rem', display: 'flex', alignItems: 'center' }}>
                           <Layers size={11} style={{ marginRight: '4px' }} /> Pluviómetro
                         </label>
@@ -5335,7 +5335,7 @@ function App() {
                             <option key={p} value={p}>{p}</option>
                           ))}
                         </select>
-                      </div>
+                      </div>}
 
                       {/* Filtro Año */}
                       <div className="filter-group" style={{ minWidth: '110px', margin: 0 }}>
@@ -5377,8 +5377,8 @@ function App() {
                         </select>
                       </div>
 
-                      {/* Botón Encender/Apagar Coloreado por Pluviómetro */}
-                      <div className="filter-group" style={{ minWidth: '160px', margin: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                      {/* Botón Pluviometría — solo para Riego */}
+                      {currentDashboardArea.toLowerCase() === 'riego' && <div className="filter-group" style={{ minWidth: '160px', margin: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
                         <label style={{ fontSize: '0.75rem', marginBottom: '0.2rem', opacity: 0.8, display: 'flex', alignItems: 'center' }}>
                           <Palette size={11} style={{ marginRight: '4px' }} /> Pluviometría
                         </label>
@@ -5419,10 +5419,10 @@ function App() {
                           }}></span>
                           {showPluvZones ? 'Desactivar' : 'Activar'}
                         </button>
-                      </div>
+                      </div>}
 
-                      {/* Botón Encendido/Apagado/Fertilización 3 posiciones para Humedad */}
-                      <div className="filter-group" style={{ minWidth: '180px', margin: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                      {/* Botón Humedad/Fertilización — solo para Riego y Fertilización */}
+                      {(currentDashboardArea.toLowerCase() === 'riego' || currentDashboardArea.toLowerCase() === 'fertilización' || currentDashboardArea.toLowerCase() === 'fertilizacion') && <div className="filter-group" style={{ minWidth: '180px', margin: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
                         <label style={{ fontSize: '0.75rem', marginBottom: '0.2rem', opacity: 0.8, display: 'flex', alignItems: 'center' }}>
                           <Layers size={11} style={{ marginRight: '4px' }} /> Humedad / Fertilización
                         </label>
@@ -5482,7 +5482,7 @@ function App() {
                           }}></span>
                           {humDisplayMode !== 'off' ? 'Desactivar' : 'Activar'}
                         </button>
-                      </div>
+                      </div>}
 
                       {/* Filtro Monitoreo GPS */}
                       <div className="filter-group" style={{ minWidth: '150px', margin: 0 }}>
