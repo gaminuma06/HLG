@@ -62,6 +62,7 @@ export default function App() {
   const [laborActive, setLaborActive] = useState(false);
   const [formValues, setFormValues] = useState({});
   const [pinnedFields, setPinnedFields] = useState({});
+  const [userFincas, setUserFincas] = useState(['HLG', 'HSL', 'TUC']); // Fincas asignadas al usuario
   
   // Estado de permisos y tracking
   const [isTracking, setIsTracking] = useState(false);
@@ -70,6 +71,40 @@ export default function App() {
   const [pendingGpsCount, setPendingGpsCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
+
+  // Helper para determinar comportamiento del campo 'finca'
+  const getFincaFieldBehavior = (field, form, fincasList) => {
+    if (field.id !== 'finca') return { visible: true };
+
+    const formFincas = form.fincas || ['Todas'];
+    
+    // Si el formulario tiene una sola finca específica (que no sea "Todas")
+    const hasSingleFormFinca = formFincas.length === 1 && formFincas[0] !== 'Todas';
+    if (hasSingleFormFinca) {
+      return { visible: false, autoValue: formFincas[0] };
+    }
+
+    // Si el operario solo tiene una finca asignada
+    const hasSingleUserFinca = fincasList && fincasList.length === 1;
+    if (hasSingleUserFinca) {
+      return { visible: false, autoValue: fincasList[0] };
+    }
+
+    // Intersección de las fincas del formulario y las del operario
+    let availableOptions = [];
+    if (formFincas.includes('Todas')) {
+      availableOptions = fincasList || ['HLG', 'HSL', 'TUC'];
+    } else {
+      const actualFincas = fincasList || ['HLG', 'HSL', 'TUC'];
+      availableOptions = actualFincas.filter(f => formFincas.includes(f));
+    }
+
+    if (availableOptions.length === 1) {
+      return { visible: false, autoValue: availableOptions[0] };
+    }
+
+    return { visible: true, options: availableOptions };
+  };
 
   // Sincronizar formularios asignados desde Firebase Cloud
   const syncAssignedFormsFromServer = async (username) => {
@@ -111,6 +146,10 @@ export default function App() {
       }
       
       if (forms.length > 0) {
+        const fincas = uData.fincas || (uData.finca ? [uData.finca] : ['HLG', 'HSL', 'TUC']);
+        await AsyncStorage.setItem('@user_fincas_' + username, JSON.stringify(fincas));
+        setUserFincas(fincas);
+
         await AsyncStorage.setItem('@assigned_forms_' + username, JSON.stringify(forms));
         await AsyncStorage.setItem('@user_area_' + username, userArea);
         setAssignedForms(forms);
@@ -153,7 +192,11 @@ export default function App() {
         if (logged === 'true' && typedUser) {
           setIsLoggedIn(true);
           
-          // Cargar formularios en caché para este usuario
+          const cachedFincasStr = await AsyncStorage.getItem('@user_fincas_' + typedUser);
+          if (cachedFincasStr) {
+            setUserFincas(JSON.parse(cachedFincasStr));
+          }
+
           const cachedFormsStr = await AsyncStorage.getItem('@assigned_forms_' + typedUser);
           if (cachedFormsStr) {
             const forms = JSON.parse(cachedFormsStr);
@@ -213,6 +256,33 @@ export default function App() {
 
     loadSessionAndStats();
   }, []);
+
+  // Sincronizar formValues cuando selectedForm o userFincas cambien
+  useEffect(() => {
+    if (selectedForm) {
+      const isEmpty = Object.keys(formValues).length === 0;
+      if (isEmpty || !laborActive) {
+        const initialValues = { ...formValues };
+        let modified = false;
+        (selectedForm.fields || []).forEach(f => {
+          if (initialValues[f.id] === undefined) {
+            initialValues[f.id] = '';
+            modified = true;
+          }
+          if (f.id === 'finca') {
+            const behavior = getFincaFieldBehavior(f, selectedForm, userFincas);
+            if (behavior.autoValue && initialValues['finca'] !== behavior.autoValue) {
+              initialValues['finca'] = behavior.autoValue;
+              modified = true;
+            }
+          }
+        });
+        if (modified) {
+          setFormValues(initialValues);
+        }
+      }
+    }
+  }, [selectedForm, userFincas]);
 
   // Actualizar estadísticas de registros locales pendientes
   const updateLocalStats = async () => {
@@ -308,8 +378,13 @@ export default function App() {
             const userProfileRes = await fetch(FIREBASE_DB_URL + '/registros/usuarios/' + typedUser + '.json');
             if (userProfileRes.ok) {
               const uData = await userProfileRes.json();
-              if (uData && uData.formularios_permitidos) {
-                forms = forms.filter(f => uData.formularios_permitidos[f.id] !== false);
+              if (uData) {
+                if (uData.formularios_permitidos) {
+                  forms = forms.filter(f => uData.formularios_permitidos[f.id] !== false);
+                }
+                const fincas = uData.fincas || (uData.finca ? [uData.finca] : ['HLG', 'HSL', 'TUC']);
+                await AsyncStorage.setItem('@user_fincas_' + typedUser, JSON.stringify(fincas));
+                setUserFincas(fincas);
               }
             }
           }
@@ -553,8 +628,25 @@ export default function App() {
 
       // Inyectar respuestas en el primer nivel del objeto para compatibilidad web
       (selectedForm.fields || []).forEach(f => {
-        formRecord[f.id] = String(formValues[f.id] || '').trim();
+        let val = String(formValues[f.id] || '').trim();
+        if (f.id === 'finca' && !val) {
+          const behavior = getFincaFieldBehavior(f, selectedForm, userFincas);
+          if (behavior.autoValue) {
+            val = behavior.autoValue;
+          }
+        }
+        formRecord[f.id] = val;
       });
+
+      // Asegurar que exista el campo finca
+      if (!formRecord['finca']) {
+        const behavior = getFincaFieldBehavior({ id: 'finca' }, selectedForm, userFincas);
+        if (behavior.autoValue) {
+          formRecord['finca'] = behavior.autoValue;
+        } else {
+          formRecord['finca'] = userFincas.length === 1 ? userFincas[0] : (userFincas.length === 3 ? 'Ambas' : userFincas[0] || 'Ambas');
+        }
+      }
 
       // Cargar cola de formularios locales
       const formsStr = await AsyncStorage.getItem('@forms_data');
@@ -612,12 +704,15 @@ export default function App() {
 
       if (track.length > 0) {
         const trackId = 'track-' + Date.now();
+        const trackFinca = userFincas.length === 1 ? userFincas[0] : (userFincas.length === 3 ? 'Ambas' : userFincas[0] || 'Ambas');
         await fetch(FIREBASE_DB_URL + '/registros/campo_recorridos/' + trackId + '.json', {
           method: 'PUT',
           body: JSON.stringify({
             id: trackId,
             usuario: loggedUser,
             timestamp: Date.now(),
+            fincas: userFincas,
+            finca: trackFinca,
             recorrido: track
           })
         });
@@ -763,6 +858,16 @@ export default function App() {
                       (form.fields || []).forEach(f => {
                         initialValues[f.id] = '';
                       });
+                      
+                      // Pre-llenar finca si es automática
+                      const fincaField = (form.fields || []).find(f => f.id === 'finca');
+                      if (fincaField) {
+                        const behavior = getFincaFieldBehavior(fincaField, form, userFincas);
+                        if (behavior.autoValue) {
+                          initialValues['finca'] = behavior.autoValue;
+                        }
+                      }
+                      
                       setFormValues(initialValues);
                     }}
                   >
@@ -822,6 +927,15 @@ export default function App() {
                     {(selectedForm.fields || []).map(field => {
                       const isPinned = !!pinnedFields[field.id];
                       
+                      const fincaBehavior = getFincaFieldBehavior(field, selectedForm, userFincas);
+                      if (field.id === 'finca' && !fincaBehavior.visible) {
+                        return null; // Ocultar el campo finca de la UI
+                      }
+
+                      const selectOptions = (field.id === 'finca' && fincaBehavior.options)
+                        ? fincaBehavior.options
+                        : (field.options || []);
+                      
                       return (
                         <View key={field.id} style={styles.fieldContainer}>
                           <View style={styles.fieldLabelRow}>
@@ -842,7 +956,7 @@ export default function App() {
                           {/* Tipo: select (Opciones en botones horizontales) */}
                           {field.type === 'select' ? (
                             <View style={styles.fincaButtonGroup}>
-                              {(field.options || []).map(opt => {
+                              {selectOptions.map(opt => {
                                 const isActive = formValues[field.id] === opt;
                                 return (
                                   <TouchableOpacity
