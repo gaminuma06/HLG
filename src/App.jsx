@@ -802,6 +802,8 @@ function App() {
   const [editingUserTempName, setEditingUserTempName] = useState('');
   const [editingUserTempPass, setEditingUserTempPass] = useState('');
   const [draggedFieldIdx, setDraggedFieldIdx] = useState(null);
+  const [permisosModalUser, setPermisosModalUser] = useState(null); // nombre del usuario cuyo modal de permisos está abierto
+  const [permisosTemp, setPermisosTemp] = useState({ fincas: [], areas_acceso: [] }); // estado local temporal del modal
   
   const getDynamicReadingFields = (reading) => {
     if (!reading) return { title: 'Lectura de Campo', fields: [] };
@@ -8920,6 +8922,23 @@ function App() {
                                       </>
                                     ) : (
                                       <>
+                                        {/* Botón Permisos */}
+                                        {adminRole === 'admin' && uname !== 'admin' && !isInactive && (
+                                          <button
+                                            className="btn btn-secondary"
+                                            onClick={() => {
+                                              setPermisosModalUser(uname);
+                                              setPermisosTemp({
+                                                fincas: Array.isArray(uinfo.fincas) ? [...uinfo.fincas] : (uinfo.finca ? [uinfo.finca] : []),
+                                                areas_acceso: Array.isArray(uinfo.areas_acceso) ? [...uinfo.areas_acceso] : []
+                                              });
+                                            }}
+                                            style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: '#a78bfa', borderColor: 'rgba(167,139,250,0.25)' }}
+                                          >
+                                            🔑 Permisos
+                                          </button>
+                                        )}
+
                                         {/* Botón Editar */}
                                         {isUserEditable && !isInactive && (
                                           <button 
@@ -9694,6 +9713,181 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* ══════════════════════════════════════════
+           MODAL DE PERMISOS (FINCAS + ÁREAS DE ACCESO)
+          ══════════════════════════════════════════ */}
+      {permisosModalUser && (() => {
+        const FINCAS_SISTEMA = ['HLG', 'HSL', 'TUC'];
+        const uinfo = adminUsers[permisosModalUser] || {};
+        const isJefe = uinfo.role === 'jefe';
+
+        const toggleFinca = (f) => {
+          setPermisosTemp(prev => {
+            const next = prev.fincas.includes(f)
+              ? prev.fincas.filter(x => x !== f)
+              : [...prev.fincas, f];
+            return { ...prev, fincas: next };
+          });
+        };
+
+        const toggleArea = (a) => {
+          setPermisosTemp(prev => {
+            const next = prev.areas_acceso.includes(a)
+              ? prev.areas_acceso.filter(x => x !== a)
+              : [...prev.areas_acceso, a];
+            return { ...prev, areas_acceso: next };
+          });
+        };
+
+        const guardarPermisos = () => {
+          const updated = {
+            ...adminUsers,
+            [permisosModalUser]: {
+              ...uinfo,
+              fincas: permisosTemp.fincas,
+              ...(isJefe ? { areas_acceso: permisosTemp.areas_acceso } : {})
+            }
+          };
+          setAdminUsers(updated);
+          saveAdminUsers(updated);
+          showAdminToast('Permisos guardados con éxito.');
+          setPermisosModalUser(null);
+        };
+
+        return (
+          <div
+            className="modal-overlay"
+            style={{ zIndex: 100002 }}
+            onClick={() => setPermisosModalUser(null)}
+          >
+            <div
+              className="modal-content glass-panel"
+              style={{ maxWidth: '480px', width: '95%' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="modal-header" style={{ marginBottom: '1.5rem' }}>
+                <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#a78bfa' }}>
+                  🔑 Permisos — <span style={{ color: 'var(--text-main)', fontWeight: 700 }}>{permisosModalUser}</span>
+                </h3>
+                <p style={{ margin: '0.4rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  {isJefe
+                    ? 'Define en qué fincas puede operar y qué áreas puede gestionar este jefe.'
+                    : 'Define en qué finca(s) opera este operario. Si solo tiene una, la finca quedará embebida automáticamente en sus formularios de campo.'}
+                </p>
+              </div>
+
+              {/* Sección A: Fincas */}
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                  Fincas Permitidas
+                </label>
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  {FINCAS_SISTEMA.map(f => {
+                    const checked = permisosTemp.fincas.includes(f);
+                    return (
+                      <label
+                        key={f}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '0.5rem',
+                          padding: '0.5rem 1rem',
+                          border: checked ? '1px solid #a78bfa' : '1px solid var(--border-light)',
+                          borderRadius: 'var(--radius-sm)',
+                          background: checked ? 'rgba(167,139,250,0.12)' : 'rgba(255,255,255,0.03)',
+                          cursor: 'pointer',
+                          fontSize: '0.9rem', fontWeight: 600,
+                          color: checked ? '#a78bfa' : 'var(--text-muted)',
+                          transition: 'all 0.2s ease',
+                          userSelect: 'none'
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleFinca(f)}
+                          style={{ cursor: 'pointer', accentColor: '#a78bfa' }}
+                        />
+                        {f}
+                      </label>
+                    );
+                  })}
+                </div>
+                {permisosTemp.fincas.length === 1 && (
+                  <p style={{ fontSize: '0.72rem', color: '#a78bfa', marginTop: '0.5rem', opacity: 0.8 }}>
+                    ✓ El operario solo trabaja en <strong>{permisosTemp.fincas[0]}</strong> — la finca se embebe automáticamente en sus formularios.
+                  </p>
+                )}
+                {permisosTemp.fincas.length > 1 && (
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+                    El operario trabaja en múltiples fincas — el formulario mostrará un campo para seleccionar la finca activa.
+                  </p>
+                )}
+              </div>
+
+              {/* Sección B: Áreas de Acceso (solo jefes) */}
+              {isJefe && (
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    Áreas que puede gestionar (crear operarios y formularios)
+                  </label>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    {adminAreasList.map(a => {
+                      const checked = permisosTemp.areas_acceso.includes(a);
+                      return (
+                        <label
+                          key={a}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '0.4rem',
+                            padding: '0.4rem 0.75rem',
+                            border: checked ? '1px solid #00f2fe' : '1px solid var(--border-light)',
+                            borderRadius: 'var(--radius-sm)',
+                            background: checked ? 'rgba(0,242,254,0.08)' : 'rgba(255,255,255,0.02)',
+                            cursor: 'pointer',
+                            fontSize: '0.82rem', fontWeight: checked ? 600 : 400,
+                            color: checked ? '#00f2fe' : 'var(--text-muted)',
+                            transition: 'all 0.2s ease',
+                            userSelect: 'none'
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleArea(a)}
+                            style={{ cursor: 'pointer', accentColor: '#00f2fe' }}
+                          />
+                          {a}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+                    Si no se selecciona ninguna, el jefe solo gestiona su área principal: <strong>{uinfo.area}</strong>
+                  </p>
+                </div>
+              )}
+
+              {/* Botones */}
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', borderTop: '1px solid var(--border-light)', paddingTop: '1rem' }}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setPermisosModalUser(null)}
+                  style={{ padding: '0.5rem 1.25rem' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={guardarPermisos}
+                  style={{ padding: '0.5rem 1.5rem', background: 'linear-gradient(135deg, #7c3aed, #a78bfa)', borderColor: '#a78bfa' }}
+                >
+                  💾 Guardar Permisos
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Modal de Confirmación de Eliminación Total */}
       {userToDeleteTotal && (
