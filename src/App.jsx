@@ -8714,12 +8714,12 @@ function App() {
               
               {/* TAB 1: GESTION DE USUARIOS */}
               {adminActiveTab === 'usuarios' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-start' }}>
                   {/* Crear usuario */}
-                  <div className="glass-panel" style={{ flex: 1, padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '400px' }}>
-                    <h3 style={{ fontSize: '1.15rem', fontWeight: 600, borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <Plus size={18} className="text-accent" />
-                      Crear Nuevo Usuario
+                  <div className="glass-panel" style={{ width: '240px', flexShrink: 0, padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+                    <h3 style={{ fontSize: '0.95rem', fontWeight: 700, borderBottom: '1px solid var(--border-light)', paddingBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <Plus size={14} className="text-accent" />
+                      Crear Usuario
                     </h3>
                     <form onSubmit={(e) => {
                       e.preventDefault();
@@ -8787,10 +8787,10 @@ function App() {
                       setNewCreatedUserFincas([]);
                       setNewCreatedJefeAreas([]);
                       setNewUserRoleLocal('operario');
-                    }} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    }} style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
                       
                       <div className="filter-group" style={{ margin: 0 }}>
-                        <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Nombre de Usuario</label>
+                        <label style={{ fontSize: '0.72rem', fontWeight: 600, marginBottom: '0.15rem' }}>Nombre de Usuario</label>
                         <input
                           type="text"
                           required
@@ -8798,27 +8798,27 @@ function App() {
                           value={newUsername}
                           onChange={(e) => setNewUsername(e.target.value)}
                           placeholder="Ej: riego2"
-                          style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem', width: '100%' }}
+                          style={{ padding: '0.3rem 0.5rem', fontSize: '0.8rem', width: '100%' }}
                         />
                       </div>
 
                       <div className="filter-group" style={{ margin: 0 }}>
-                        <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Contraseña</label>
+                        <label style={{ fontSize: '0.72rem', fontWeight: 600, marginBottom: '0.15rem' }}>Contraseña</label>
                         <input
                           type="text"
                           required
                           className="select-control"
                           value={newPassword}
                           onChange={(e) => setNewPassword(e.target.value)}
-                          placeholder="Contraseña de acceso"
-                          style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem', width: '100%' }}
+                          placeholder="Contraseña"
+                          style={{ padding: '0.3rem 0.5rem', fontSize: '0.8rem', width: '100%' }}
                         />
                       </div>
 
                       {/* Selector de Rol — siempre arriba para que controle lo que aparece después */}
                       {adminRole === 'admin' && (
                         <div className="filter-group" style={{ margin: 0 }}>
-                          <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Rol de Usuario</label>
+                          <label style={{ fontSize: '0.72rem', fontWeight: 600, marginBottom: '0.15rem' }}>Rol de Usuario</label>
                           <select
                             className="select-control"
                             value={newUserRoleLocal}
@@ -8827,7 +8827,7 @@ function App() {
                               setNewCreatedJefeAreas([]);
                               setNewArea(adminAreasList[0] || '');
                             }}
-                            style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem', width: '100%', background: 'var(--bg-input)' }}
+                            style={{ padding: '0.3rem 0.5rem', fontSize: '0.8rem', width: '100%', background: 'var(--bg-input)' }}
                           >
                             <option value="operario">Operario</option>
                             <option value="jefe">Jefe de Área</option>
@@ -8848,24 +8848,24 @@ function App() {
                         if (newUserRoleLocal === 'jefe' && adminRole === 'admin') {
                           return (
                             <div className="filter-group" style={{ margin: 0 }}>
-                              <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Áreas de Trabajo del Jefe</label>
-                              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.35rem' }}>
+                              <label style={{ fontSize: '0.72rem', fontWeight: 600, marginBottom: '0.15rem' }}>Áreas del Jefe</label>
+                              <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap', marginTop: '0.2rem' }}>
                                 {adminAreasList.map(area => {
                                   const checked = newCreatedJefeAreas.includes(area);
                                   return (
                                     <label key={area} style={{
-                                      display: 'flex', alignItems: 'center', gap: '0.4rem',
-                                      padding: '0.3rem 0.65rem',
+                                      display: 'flex', alignItems: 'center', gap: '0.25rem',
+                                      padding: '0.2rem 0.4rem',
                                       borderRadius: 'var(--radius-sm)',
                                       background: checked ? 'rgba(56,189,248,0.15)' : 'var(--bg-input)',
                                       border: `1px solid ${checked ? 'var(--accent)' : 'var(--border-light)'}`,
-                                      cursor: 'pointer', fontSize: '0.82rem',
+                                      cursor: 'pointer', fontSize: '0.72rem',
                                       color: checked ? 'var(--accent)' : 'var(--text-muted)'
                                     }}>
                                       <input
                                         type="checkbox"
                                         checked={checked}
-                                        style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
+                                        style={{ accentColor: 'var(--accent)', cursor: 'pointer', width: '10px', height: '10px' }}
                                         onChange={() => {
                                           setNewCreatedJefeAreas(prev =>
                                             prev.includes(area) ? prev.filter(a => a !== area) : [...prev, area]
@@ -8878,8 +8878,8 @@ function App() {
                                 })}
                               </div>
                               {newCreatedJefeAreas.length > 0 && (
-                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>
-                                  {newCreatedJefeAreas.length} área(s) seleccionada(s)
+                                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                                  {newCreatedJefeAreas.length} área(s)
                                 </div>
                               )}
                             </div>
@@ -8890,12 +8890,12 @@ function App() {
                         if (adminRole === 'admin' || availableAreasToCreate.length > 1) {
                           return (
                             <div className="filter-group" style={{ margin: 0 }}>
-                              <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Área de Trabajo</label>
+                              <label style={{ fontSize: '0.72rem', fontWeight: 600, marginBottom: '0.15rem' }}>Área de Trabajo</label>
                               <select
                                 className="select-control"
                                 value={newArea}
                                 onChange={(e) => setNewArea(e.target.value)}
-                                style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem', width: '100%', background: 'var(--bg-input)' }}
+                                style={{ padding: '0.3rem 0.5rem', fontSize: '0.8rem', width: '100%', background: 'var(--bg-input)' }}
                               >
                                 {availableAreasToCreate.map(areaOpt => (
                                   <option key={areaOpt} value={areaOpt}>{areaOpt}</option>
@@ -8916,32 +8916,13 @@ function App() {
                         if (finalAvailableFincas.length > 1) {
                           return (
                             <div className="filter-group" style={{ margin: 0 }}>
-                              <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Fincas Permitidas</label>
-                              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
+                              <label style={{ fontSize: '0.72rem', fontWeight: 600, marginBottom: '0.15rem' }}>Fincas</label>
+                              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.15rem' }}>
                                 {finalAvailableFincas.map(f => {
                                   const checked = newCreatedUserFincas.includes(f);
                                   return (
-                                    <label
-                                      key={f}
-                                      style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '0.4rem',
-                                        fontSize: '0.85rem',
-                                        cursor: 'pointer',
-                                        color: checked ? 'var(--accent)' : 'var(--text-muted)'
-                                      }}
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        checked={checked}
-                                        onChange={() => {
-                                          setNewCreatedUserFincas(prev => 
-                                            prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f]
-                                          );
-                                        }}
-                                        style={{ cursor: 'pointer', accentColor: 'var(--accent)' }}
-                                      />
+                                    <label key={f} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.75rem', cursor: 'pointer', color: checked ? 'var(--accent)' : 'var(--text-muted)' }}>
+                                      <input type="checkbox" checked={checked} onChange={() => { setNewCreatedUserFincas(prev => prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f]); }} style={{ cursor: 'pointer', accentColor: 'var(--accent)', width: '11px', height: '11px' }} />
                                       {f}
                                     </label>
                                   );
@@ -8959,20 +8940,20 @@ function App() {
                         return null;
                       })()}
 
-                      <button type="submit" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', marginTop: '0.5rem' }}>
+                      <button type="submit" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '0.4rem', fontSize: '0.82rem' }}>
                         Crear Usuario
                       </button>
                     </form>
                   </div>
 
                   {/* Lista de usuarios */}
-                  <div className="glass-panel" style={{ padding: '1.5rem 2rem' }}>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.6rem' }}>
+                  <div className="glass-panel" style={{ flex: 1, minWidth: 0, padding: '1.25rem', overflowX: 'auto' }}>
+                    <h3 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: '0.75rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.5rem' }}>
                       Operarios Registrados
                     </h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                       {/* Cabecera */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '0.5rem', padding: '0.4rem 0.75rem', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border-light)' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '100px 100px 1fr 100px', gap: '0.4rem', padding: '0.3rem 0.5rem', fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border-light)' }}>
                         <span>Usuario</span>
                         <span>Contraseña</span>
                         <span>Área / Fincas</span>
@@ -9003,19 +8984,20 @@ function App() {
                               key={uname}
                               style={{
                                 display: 'grid',
-                                gridTemplateColumns: '1fr 1fr 1fr auto',
-                                gap: '0.5rem',
-                                alignItems: 'center',
-                                padding: '0.6rem 0.75rem',
+                                gridTemplateColumns: '100px 100px 1fr 100px',
+                                gap: '0.4rem',
+                                alignItems: 'start',
+                                padding: '0.4rem 0.5rem',
                                 borderRadius: 'var(--radius-sm)',
                                 background: isEditing ? 'rgba(56,189,248,0.06)' : 'transparent',
                                 border: isEditing ? '1px solid rgba(56,189,248,0.2)' : '1px solid transparent',
                                 opacity: isInactive ? 0.5 : 1,
-                                transition: 'all 0.2s ease'
+                                transition: 'all 0.2s ease',
+                                borderBottom: '1px solid rgba(255,255,255,0.04)'
                               }}
                             >
                               {/* Col 1: Usuario */}
-                              <div style={{ fontWeight: 600, fontSize: '0.85rem', minWidth: 0 }}>
+                              <div style={{ fontWeight: 600, fontSize: '0.78rem', minWidth: 0 }}>
                                 {isEditing ? (
                                   <input
                                     type="text"
@@ -9023,32 +9005,32 @@ function App() {
                                     value={editingUserTempName}
                                     onChange={(e) => setEditingUserTempName(e.target.value)}
                                     disabled={uname === 'admin'}
-                                    style={{ padding: '0.3rem 0.5rem', fontSize: '0.8rem', background: 'var(--bg-input)', width: '100%' }}
+                                    style={{ padding: '0.25rem 0.35rem', fontSize: '0.75rem', background: 'var(--bg-input)', width: '100%' }}
                                   />
                                 ) : (
                                   <>
-                                    <span style={{ wordBreak: 'break-all' }}>{uname}</span>
+                                  <span style={{ wordBreak: 'break-all', fontSize: '0.78rem' }}>{uname}</span>
                                     {isRequestedDelete && <span style={{ fontSize: '0.65rem', color: 'orange', display: 'block', fontWeight: 500 }}>(Baja solicitada)</span>}
                                     {isEliminating && <span style={{ fontSize: '0.65rem', color: 'var(--danger)', display: 'block', fontWeight: 500 }}>({daysLeft}d para eliminar)</span>}
                                   </>
                                 )}
                               </div>
                               {/* Col 2: Contraseña */}
-                              <div style={{ fontSize: '0.82rem', minWidth: 0 }}>
+                              <div style={{ fontSize: '0.75rem', minWidth: 0 }}>
                                 {isEditing ? (
                                   <input
                                     type="text"
                                     className="select-control"
                                     value={editingUserTempPass}
                                     onChange={(e) => setEditingUserTempPass(e.target.value)}
-                                    style={{ padding: '0.3rem 0.5rem', fontSize: '0.8rem', background: 'var(--bg-input)', width: '100%' }}
+                                    style={{ padding: '0.25rem 0.35rem', fontSize: '0.75rem', background: 'var(--bg-input)', width: '100%' }}
                                   />
                                 ) : (
-                                  <span style={{ color: 'var(--text-muted)', fontFamily: 'monospace', wordBreak: 'break-all', fontSize: '0.8rem' }}>{uinfo.password}</span>
+                                  <span style={{ color: 'var(--text-muted)', fontFamily: 'monospace', wordBreak: 'break-all', fontSize: '0.75rem' }}>{uinfo.password}</span>
                                 )}
                               </div>
                               {/* Col 3: Área / Fincas */}
-                              <div style={{ fontSize: '0.8rem', minWidth: 0 }}>
+                              <div style={{ fontSize: '0.75rem', minWidth: 0 }}>
                                 {uname === 'admin' ? (
                                   <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Administrador General</span>
                                 ) : (
@@ -9063,7 +9045,7 @@ function App() {
                                         saveAdminUsers(updated);
                                       }}
                                       disabled={adminRole !== 'admin' || isInactive || isEditing}
-                                      style={{ padding: '0.2rem 0.4rem', fontSize: '0.78rem', background: 'var(--bg-input)', width: '100%' }}
+                                      style={{ padding: '0.18rem 0.35rem', fontSize: '0.72rem', background: 'var(--bg-input)', width: '100%' }}
                                     >
                                       {adminAreasList.map(areaOpt => (
                                         <option key={areaOpt} value={areaOpt}>{areaOpt}</option>
