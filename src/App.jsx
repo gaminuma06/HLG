@@ -805,6 +805,9 @@ function App() {
   const [permisosModalUser, setPermisosModalUser] = useState(null); // nombre del usuario cuyo modal de permisos está abierto
   const [permisosTemp, setPermisosTemp] = useState({ fincas: [], areas_acceso: [] }); // estado local temporal del modal
   const [newCreatedUserFincas, setNewCreatedUserFincas] = useState([]); // fincas seleccionadas para el nuevo operario
+  const [permisosSearchQuery, setPermisosSearchQuery] = useState(''); // buscador en tab Permisos
+  const [newUserRoleLocal, setNewUserRoleLocal] = useState('operario'); // rol seleccionado al crear nuevo usuario (controla vista de checkboxes)
+  const [newCreatedJefeAreas, setNewCreatedJefeAreas] = useState([]); // áreas seleccionadas cuando se crea un jefe
 
   const canJefeManageUser = (jefeUname, operarioUinfo) => {
     if (adminRole === 'admin') return true;
@@ -8731,7 +8734,13 @@ function App() {
                         ? newArea
                         : (availableAreasToCreate.length > 1 ? newArea : availableAreasToCreate[0]);
 
-                      const roleToSave = adminRole === 'jefe' ? 'operario' : (e.target.newUserRole?.value || 'operario');
+                      const roleToSave = adminRole === 'jefe' ? 'operario' : newUserRoleLocal;
+
+                      // Para jefes: áreas de areas_acceso seleccionadas; para operarios: área única
+                      const areasAccesoToSave = (roleToSave === 'jefe') ? newCreatedJefeAreas : [];
+                      const effectiveArea = (roleToSave === 'jefe')
+                        ? (newCreatedJefeAreas[0] || areaToSave)
+                        : areaToSave;
 
                       const creatorFincas = adminRole === 'admin' ? ['HLG', 'HSL', 'TUC'] : (curJefeInfo?.fincas || []);
                       const finalAvailableFincas = creatorFincas.length > 0 ? creatorFincas : ['HLG', 'HSL', 'TUC'];
@@ -8739,8 +8748,16 @@ function App() {
                         ? [finalAvailableFincas[0]]
                         : newCreatedUserFincas;
 
-                      if (!uname || !newPassword || !areaToSave) {
+                      if (!uname || !newPassword) {
                         showAdminToast("Por favor llena todos los campos.", "error");
+                        return;
+                      }
+                      if (roleToSave === 'jefe' && areasAccesoToSave.length === 0) {
+                        showAdminToast("Selecciona al menos un área de trabajo para el Jefe.", "error");
+                        return;
+                      }
+                      if (roleToSave === 'operario' && !effectiveArea) {
+                        showAdminToast("Selecciona un área de trabajo.", "error");
                         return;
                       }
                       if (fincasToSave.length === 0) {
@@ -8751,21 +8768,24 @@ function App() {
                         showAdminToast("Este usuario ya existe.", "error");
                         return;
                       }
-                      const updated = { 
-                        ...adminUsers, 
-                        [uname]: { 
-                          password: newPassword, 
-                          area: areaToSave, 
-                          role: roleToSave,
-                          fincas: fincasToSave,
-                          finca: fincasToSave.length === 1 ? fincasToSave[0] : (fincasToSave.length === 3 ? 'Ambas' : fincasToSave[0] || 'Ambas'),
-                          status: 'activo'
-                        } 
+                      const newUserData = { 
+                        password: newPassword, 
+                        area: effectiveArea, 
+                        role: roleToSave,
+                        fincas: fincasToSave,
+                        finca: fincasToSave.length === 1 ? fincasToSave[0] : (fincasToSave.length === 3 ? 'Ambas' : fincasToSave[0] || 'Ambas'),
+                        status: 'activo'
                       };
+                      if (roleToSave === 'jefe' && areasAccesoToSave.length > 0) {
+                        newUserData.areas_acceso = areasAccesoToSave;
+                      }
+                      const updated = { ...adminUsers, [uname]: newUserData };
                       saveAdminUsers(updated);
                       setNewUsername('');
                       setNewPassword('');
                       setNewCreatedUserFincas([]);
+                      setNewCreatedJefeAreas([]);
+                      setNewUserRoleLocal('operario');
                     }} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                       
                       <div className="filter-group" style={{ margin: 0 }}>
@@ -8794,7 +8814,27 @@ function App() {
                         />
                       </div>
 
-                      {/* Selector de Área condicional */}
+                      {/* Selector de Rol — siempre arriba para que controle lo que aparece después */}
+                      {adminRole === 'admin' && (
+                        <div className="filter-group" style={{ margin: 0 }}>
+                          <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Rol de Usuario</label>
+                          <select
+                            className="select-control"
+                            value={newUserRoleLocal}
+                            onChange={(e) => {
+                              setNewUserRoleLocal(e.target.value);
+                              setNewCreatedJefeAreas([]);
+                              setNewArea(adminAreasList[0] || '');
+                            }}
+                            style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem', width: '100%', background: 'var(--bg-input)' }}
+                          >
+                            <option value="operario">Operario</option>
+                            <option value="jefe">Jefe de Área</option>
+                          </select>
+                        </div>
+                      )}
+
+                      {/* Selector de Área — condicional según rol */}
                       {(() => {
                         const curJefeInfo = adminUsers[loggedAdminUser?.toLowerCase()];
                         const availableAreasToCreate = adminRole === 'admin'
@@ -8803,6 +8843,49 @@ function App() {
                               ? curJefeInfo.areas_acceso
                               : [adminArea || curJefeInfo?.area].filter(Boolean));
 
+                        // Si es Jefe: checkboxes multi-área
+                        if (newUserRoleLocal === 'jefe' && adminRole === 'admin') {
+                          return (
+                            <div className="filter-group" style={{ margin: 0 }}>
+                              <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Áreas de Trabajo del Jefe</label>
+                              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.35rem' }}>
+                                {adminAreasList.map(area => {
+                                  const checked = newCreatedJefeAreas.includes(area);
+                                  return (
+                                    <label key={area} style={{
+                                      display: 'flex', alignItems: 'center', gap: '0.4rem',
+                                      padding: '0.3rem 0.65rem',
+                                      borderRadius: 'var(--radius-sm)',
+                                      background: checked ? 'rgba(56,189,248,0.15)' : 'var(--bg-input)',
+                                      border: `1px solid ${checked ? 'var(--accent)' : 'var(--border-light)'}`,
+                                      cursor: 'pointer', fontSize: '0.82rem',
+                                      color: checked ? 'var(--accent)' : 'var(--text-muted)'
+                                    }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
+                                        onChange={() => {
+                                          setNewCreatedJefeAreas(prev =>
+                                            prev.includes(area) ? prev.filter(a => a !== area) : [...prev, area]
+                                          );
+                                        }}
+                                      />
+                                      {area}
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                              {newCreatedJefeAreas.length > 0 && (
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>
+                                  {newCreatedJefeAreas.length} área(s) seleccionada(s)
+                                </div>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        // Si es Operario: select de área simple
                         if (adminRole === 'admin' || availableAreasToCreate.length > 1) {
                           return (
                             <div className="filter-group" style={{ margin: 0 }}>
@@ -8874,20 +8957,6 @@ function App() {
                         }
                         return null;
                       })()}
-
-                      {adminRole === 'admin' && (
-                        <div className="filter-group" style={{ margin: 0 }}>
-                          <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Rol de Usuario</label>
-                          <select
-                            name="newUserRole"
-                            className="select-control"
-                            style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem', width: '100%', background: 'var(--bg-input)' }}
-                          >
-                            <option value="operario">Operario</option>
-                            <option value="jefe">Jefe de Área</option>
-                          </select>
-                        </div>
-                      )}
 
                       <button type="submit" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', marginTop: '0.5rem' }}>
                         Crear Usuario
@@ -9054,8 +9123,8 @@ function App() {
                                       </>
                                     ) : (
                                       <>
-                                        {/* Botón Permisos */}
-                                        {adminRole === 'admin' && uname !== 'admin' && !isInactive && (
+                                        {/* Botón Permisos — visible para admin y también para jefes sobre sus propios operarios */}
+                                        {(adminRole === 'admin' || (adminRole === 'jefe' && isUserEditable)) && uname !== 'admin' && !isInactive && (
                                           <button
                                             className="btn btn-secondary"
                                             onClick={() => {
@@ -9189,103 +9258,139 @@ function App() {
               {/* TAB 2: CREADOR DE FORMULARIOS */}
               {adminActiveTab === 'formularios' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-                  {/* Selector de Área */}
-                  <div className="glass-panel" style={{ padding: '1.5rem 2rem', display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
-                    <div className="filter-group" style={{ margin: 0, minWidth: '220px' }}>
-                      <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Seleccionar Área de Trabajo</label>
-                      <select
-                        className="select-control"
-                        value={selectedAreaEdit}
-                        onChange={(e) => {
-                          setSelectedAreaEdit(e.target.value);
-                          setActiveFormIndexEdit(null);
-                        }}
-                        style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem', width: '100%', background: 'var(--bg-input)' }}
-                      >
-                        {adminAreasList.map(area => (
-                          <option key={area} value={area}>{area}</option>
-                        ))}
-                      </select>
-                    </div>
+                  {/* Selector de Área — filtrado según permisos del usuario conectado */}
+                  {(() => {
+                    const curJefeInfo = adminUsers[loggedAdminUser?.toLowerCase()];
+                    const editableAreas = adminRole === 'admin'
+                      ? adminAreasList
+                      : (() => {
+                          const areas = curJefeInfo?.areas_acceso && curJefeInfo.areas_acceso.length > 0
+                            ? curJefeInfo.areas_acceso
+                            : [adminArea || curJefeInfo?.area].filter(Boolean);
+                          return areas.filter(a => adminAreasList.includes(a));
+                        })();
 
-                    {showCustomAreaInput && (
-                      <div className="filter-group" style={{ margin: 0, minWidth: '220px' }}>
-                        <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Nombre de la Nueva Área</label>
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          <input 
-                            type="text"
-                            className="select-control"
-                            value={customAreaName}
-                            onChange={(e) => setCustomAreaName(e.target.value)}
-                            placeholder="Ej: Riego"
-                            style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem' }}
-                          />
-                          <button 
-                            className="btn btn-primary"
-                            onClick={() => {
-                              const name = customAreaName.trim();
-                              if (!name) return;
-                              const updated = { ...adminFormularios, [name]: { formularios: [] } };
-                              setAdminFormularios(updated);
-                              setSelectedAreaEdit(name);
-                              setShowCustomAreaInput(false);
-                              setCustomAreaName('');
-                              setActiveFormIndexEdit(null);
-                            }}
-                          >
-                            Crear
-                          </button>
+                    // Si el área seleccionada no está en editableAreas, reset al primero disponible
+                    if (editableAreas.length > 0 && !editableAreas.includes(selectedAreaEdit)) {
+                      setTimeout(() => { setSelectedAreaEdit(editableAreas[0]); setActiveFormIndexEdit(null); }, 0);
+                    }
+
+                    return (
+                      <div className="glass-panel" style={{ padding: '1.5rem 2rem', display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
+                        <div className="filter-group" style={{ margin: 0, minWidth: '220px' }}>
+                          <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>
+                            {editableAreas.length === 1 ? 'Área de Trabajo' : 'Seleccionar Área de Trabajo'}
+                          </label>
+                          {editableAreas.length === 1 ? (
+                            <div style={{
+                              padding: '0.5rem 0.75rem',
+                              background: 'var(--bg-input)',
+                              border: '1px solid var(--border-light)',
+                              borderRadius: 'var(--radius-sm)',
+                              fontSize: '0.9rem',
+                              color: 'var(--accent)',
+                              fontWeight: 600
+                            }}>
+                              {editableAreas[0]}
+                            </div>
+                          ) : (
+                            <select
+                              className="select-control"
+                              value={selectedAreaEdit}
+                              onChange={(e) => {
+                                setSelectedAreaEdit(e.target.value);
+                                setActiveFormIndexEdit(null);
+                              }}
+                              style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem', width: '100%', background: 'var(--bg-input)' }}
+                            >
+                              {editableAreas.map(area => (
+                                <option key={area} value={area}>{area}</option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+
+                        {showCustomAreaInput && (
+                          <div className="filter-group" style={{ margin: 0, minWidth: '220px' }}>
+                            <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Nombre de la Nueva Área</label>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                              <input 
+                                type="text"
+                                className="select-control"
+                                value={customAreaName}
+                                onChange={(e) => setCustomAreaName(e.target.value)}
+                                placeholder="Ej: Riego"
+                                style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem' }}
+                              />
+                              <button 
+                                className="btn btn-primary"
+                                onClick={() => {
+                                  const name = customAreaName.trim();
+                                  if (!name) return;
+                                  const updated = { ...adminFormularios, [name]: { formularios: [] } };
+                                  setAdminFormularios(updated);
+                                  setSelectedAreaEdit(name);
+                                  setShowCustomAreaInput(false);
+                                  setCustomAreaName('');
+                                  setActiveFormIndexEdit(null);
+                                }}
+                              >
+                                Crear
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
+                          {(() => {
+                            const curJefeInfo = adminUsers[loggedAdminUser?.toLowerCase()];
+                            const jefeAreas = curJefeInfo?.areas_acceso && curJefeInfo.areas_acceso.length > 0
+                              ? curJefeInfo.areas_acceso
+                              : [adminArea || curJefeInfo?.area].filter(Boolean);
+                            const canCreate = adminRole === 'admin' || (adminRole === 'jefe' && jefeAreas.includes(selectedAreaEdit));
+                            
+                            if (!canCreate) return null;
+                            return (
+                              <button 
+                                className="btn btn-primary"
+                                onClick={() => {
+                                  const areaForms = adminFormularios[selectedAreaEdit]?.formularios || [];
+                                  const curJefeInfoLocal = adminUsers[loggedAdminUser?.toLowerCase()];
+                                  const creatorFincas = adminRole === 'admin' ? ['HLG', 'HSL', 'TUC'] : (curJefeInfoLocal?.fincas || []);
+                                  const defaultFincas = creatorFincas.length === 1 ? [creatorFincas[0]] : ['Todas'];
+
+                                  const newFormObj = {
+                                    id: 'form_' + selectedAreaEdit.toLowerCase() + '_' + Date.now(),
+                                    titulo: 'Nuevo Formulario ' + selectedAreaEdit,
+                                    labels: {
+                                      iniciar: 'Iniciar Labor',
+                                      finalizar: 'Finalizar Labor'
+                                    },
+                                    fincas: defaultFincas,
+                                    fields: [
+                                      { id: 'finca', label: 'Finca', type: 'select', options: ['Finca 01', 'Finca 02'], pinned: true, required: true },
+                                      { id: 'lote', label: 'Lote', type: 'text', pinned: true, required: true }
+                                    ]
+                                  };
+                                  const updated = {
+                                    ...adminFormularios,
+                                    [selectedAreaEdit]: {
+                                      formularios: [...areaForms, newFormObj]
+                                    }
+                                  };
+                                  setAdminFormularios(updated);
+                                  setActiveFormIndexEdit(areaForms.length);
+                                }}
+                              >
+                                <Plus size={16} />
+                                Crear Nuevo Formulario en {selectedAreaEdit}
+                              </button>
+                            );
+                          })()}
                         </div>
                       </div>
-                    )}
-
-                    <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
-                      {(() => {
-                        const curJefeInfo = adminUsers[loggedAdminUser?.toLowerCase()];
-                        const jefeAreas = curJefeInfo?.areas_acceso && curJefeInfo.areas_acceso.length > 0
-                          ? curJefeInfo.areas_acceso
-                          : [adminArea || curJefeInfo?.area].filter(Boolean);
-                        const canCreate = adminRole === 'admin' || (adminRole === 'jefe' && jefeAreas.includes(selectedAreaEdit));
-                        
-                        if (!canCreate) return null;
-                        return (
-                          <button 
-                            className="btn btn-primary"
-                            onClick={() => {
-                              const areaForms = adminFormularios[selectedAreaEdit]?.formularios || [];
-                              const creatorFincas = adminRole === 'admin' ? ['HLG', 'HSL', 'TUC'] : (curJefeInfo?.fincas || []);
-                              const defaultFincas = creatorFincas.length === 1 ? [creatorFincas[0]] : ['Todas'];
-
-                              const newFormObj = {
-                                id: 'form_' + selectedAreaEdit.toLowerCase() + '_' + Date.now(),
-                                titulo: 'Nuevo Formulario ' + selectedAreaEdit,
-                                labels: {
-                                  iniciar: 'Iniciar Labor',
-                                  finalizar: 'Finalizar Labor'
-                                },
-                                fincas: defaultFincas,
-                                fields: [
-                                  { id: 'finca', label: 'Finca', type: 'select', options: ['Finca 01', 'Finca 02'], pinned: true, required: true },
-                                  { id: 'lote', label: 'Lote', type: 'text', pinned: true, required: true }
-                                ]
-                              };
-                              const updated = {
-                                ...adminFormularios,
-                                [selectedAreaEdit]: {
-                                  formularios: [...areaForms, newFormObj]
-                                }
-                              };
-                              setAdminFormularios(updated);
-                              setActiveFormIndexEdit(areaForms.length);
-                            }}
-                          >
-                            <Plus size={16} />
-                            Crear Nuevo Formulario en {selectedAreaEdit}
-                          </button>
-                        );
-                      })()}
-                    </div>
-                  </div>
+                    );
+                  })()}
 
                   {/* Listado y editor de formularios de la área */}
                   <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start' }}>
@@ -9740,9 +9845,19 @@ function App() {
               {/* TAB 3: PERMISOS DE FORMULARIOS */}
               {adminActiveTab === 'permisos' && (
                 <div className="glass-panel" style={{ padding: '2.5rem' }}>
-                  <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
-                    Permisos y Áreas de Trabajo por Operario
-                  </h3>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', marginBottom: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
+                    <h3 style={{ fontSize: '1.2rem', fontWeight: 600, margin: 0 }}>
+                      Permisos y Áreas de Trabajo por Operario
+                    </h3>
+                    <input
+                      type="text"
+                      className="select-control"
+                      placeholder="🔍 Buscar operario..."
+                      value={permisosSearchQuery}
+                      onChange={(e) => setPermisosSearchQuery(e.target.value)}
+                      style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem', background: 'var(--bg-input)', width: '220px', flexShrink: 0 }}
+                    />
+                  </div>
                   <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '2rem' }}>
                     Asigna a qué áreas pertenece cada operario y selecciona individualmente qué formularios tiene permitidos en cada área. Un operario puede pertenecer a varias áreas simultáneamente. El usuario 'admin' tiene permisos generales sobre todas las áreas.
                   </p>
@@ -9759,7 +9874,7 @@ function App() {
                           return areas;
                         })();
 
-                    const operarios = Object.entries(adminUsers).filter(([uname, uinfo]) => {
+                    const allOperarios = Object.entries(adminUsers).filter(([uname, uinfo]) => {
                       if (uname === 'admin') return adminRole === 'admin';
                       if (uinfo.role === 'admin' || uinfo.role === 'jefe') return adminRole === 'admin';
                       if (adminRole === 'admin') return true;
@@ -9770,10 +9885,17 @@ function App() {
                       return opAreas.some(a => jefeAreas.includes(a));
                     });
 
+                    // Filtro de búsqueda
+                    const operarios = permisosSearchQuery.trim()
+                      ? allOperarios.filter(([uname]) => uname.toLowerCase().includes(permisosSearchQuery.trim().toLowerCase()))
+                      : allOperarios;
+
                     return (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                         {operarios.length === 0 && (
-                          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>No hay operarios visibles para tu perfil.</p>
+                          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                            {permisosSearchQuery ? `No se encontraron operarios con "${permisosSearchQuery}".` : 'No hay operarios visibles para tu perfil.'}
+                          </p>
                         )}
                         {operarios.map(([uname, uinfo]) => {
                           if (uname === 'admin') {
