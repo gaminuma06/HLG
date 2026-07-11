@@ -8714,7 +8714,7 @@ function App() {
               
               {/* TAB 1: GESTION DE USUARIOS */}
               {adminActiveTab === 'usuarios' && (
-                <div style={{ display: 'flex', gap: '2.5rem', alignItems: 'flex-start' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
                   {/* Crear usuario */}
                   <div className="glass-panel" style={{ flex: 1, padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '400px' }}>
                     <h3 style={{ fontSize: '1.15rem', fontWeight: 600, borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -8966,343 +8966,244 @@ function App() {
                   </div>
 
                   {/* Lista de usuarios */}
-                  <div className="glass-panel" style={{ flex: 2, padding: '2rem', overflowX: 'auto' }}>
-                    <h3 style={{ fontSize: '1.15rem', fontWeight: 600, marginBottom: '1.25rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
+                  <div className="glass-panel" style={{ padding: '1.5rem 2rem' }}>
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.6rem' }}>
                       Operarios Registrados
                     </h3>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '2px solid var(--border-light)', textAlign: 'left', color: 'var(--text-muted)' }}>
-                          <th style={{ padding: '0.75rem' }}>Usuario</th>
-                          <th style={{ padding: '0.75rem' }}>Contraseña</th>
-                          <th style={{ padding: '0.75rem' }}>Área</th>
-                          <th style={{ padding: '0.75rem', textAlign: 'right' }}>Acciones</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {Object.entries(adminUsers)
-                          .filter(([uname, uinfo]) => {
-                            if (adminRole === 'admin') return true;
-                            return canJefeManageUser(loggedAdminUser, uinfo);
-                          })
-                          .sort((a, b) => a[0].localeCompare(b[0]))
-                          .map(([uname, uinfo]) => {
-                            const isInactive = uinfo.status && uinfo.status !== 'activo';
-                            const isRequestedDelete = uinfo.status === 'solicitado_eliminar';
-                            const isEliminating = uinfo.status === 'eliminando';
-                            const isEditing = editingUserKey === uname;
-                            
-                            // Permiso de edición: Admin puede editar a todos; Jefe solo a los que tiene permitido gestionar.
-                            const isUserEditable = adminRole === 'admin' || (adminRole === 'jefe' && canJefeManageUser(loggedAdminUser, uinfo));
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      {/* Cabecera */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '0.5rem', padding: '0.4rem 0.75rem', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border-light)' }}>
+                        <span>Usuario</span>
+                        <span>Contraseña</span>
+                        <span>Área / Fincas</span>
+                        <span style={{ textAlign: 'right' }}>Acciones</span>
+                      </div>
+                      {Object.entries(adminUsers)
+                        .filter(([uname, uinfo]) => {
+                          if (adminRole === 'admin') return true;
+                          return canJefeManageUser(loggedAdminUser, uinfo);
+                        })
+                        .sort((a, b) => a[0].localeCompare(b[0]))
+                        .map(([uname, uinfo]) => {
+                          const isInactive = uinfo.status && uinfo.status !== 'activo';
+                          const isRequestedDelete = uinfo.status === 'solicitado_eliminar';
+                          const isEliminating = uinfo.status === 'eliminando';
+                          const isEditing = editingUserKey === uname;
+                          const isUserEditable = adminRole === 'admin' || (adminRole === 'jefe' && canJefeManageUser(loggedAdminUser, uinfo));
 
-                            let daysLeft = 90;
-                            if (isEliminating && uinfo.deletion_start_date) {
-                              const diffMs = Date.now() - uinfo.deletion_start_date;
-                              daysLeft = 90 - Math.floor(diffMs / (24 * 60 * 60 * 1000));
-                              if (daysLeft < 0) daysLeft = 0;
-                            }
+                          let daysLeft = 90;
+                          if (isEliminating && uinfo.deletion_start_date) {
+                            const diffMs = Date.now() - uinfo.deletion_start_date;
+                            daysLeft = 90 - Math.floor(diffMs / (24 * 60 * 60 * 1000));
+                            if (daysLeft < 0) daysLeft = 0;
+                          }
 
-                            return (
-                              <tr 
-                                key={uname} 
-                                style={{ 
-                                  borderBottom: '1px solid var(--border-light)', 
-                                  opacity: isInactive ? 0.45 : 1, 
-                                  transition: 'opacity 0.25s ease' 
-                                }}
-                              >
-                                <td style={{ padding: '0.75rem', fontWeight: 600 }}>
-                                  {isEditing ? (
-                                    <input 
-                                      type="text"
+                          return (
+                            <div
+                              key={uname}
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: '1fr 1fr 1fr auto',
+                                gap: '0.5rem',
+                                alignItems: 'center',
+                                padding: '0.6rem 0.75rem',
+                                borderRadius: 'var(--radius-sm)',
+                                background: isEditing ? 'rgba(56,189,248,0.06)' : 'transparent',
+                                border: isEditing ? '1px solid rgba(56,189,248,0.2)' : '1px solid transparent',
+                                opacity: isInactive ? 0.5 : 1,
+                                transition: 'all 0.2s ease'
+                              }}
+                            >
+                              {/* Col 1: Usuario */}
+                              <div style={{ fontWeight: 600, fontSize: '0.85rem', minWidth: 0 }}>
+                                {isEditing ? (
+                                  <input
+                                    type="text"
+                                    className="select-control"
+                                    value={editingUserTempName}
+                                    onChange={(e) => setEditingUserTempName(e.target.value)}
+                                    disabled={uname === 'admin'}
+                                    style={{ padding: '0.3rem 0.5rem', fontSize: '0.8rem', background: 'var(--bg-input)', width: '100%' }}
+                                  />
+                                ) : (
+                                  <>
+                                    <span style={{ wordBreak: 'break-all' }}>{uname}</span>
+                                    {isRequestedDelete && <span style={{ fontSize: '0.65rem', color: 'orange', display: 'block', fontWeight: 500 }}>(Baja solicitada)</span>}
+                                    {isEliminating && <span style={{ fontSize: '0.65rem', color: 'var(--danger)', display: 'block', fontWeight: 500 }}>({daysLeft}d para eliminar)</span>}
+                                  </>
+                                )}
+                              </div>
+                              {/* Col 2: Contraseña */}
+                              <div style={{ fontSize: '0.82rem', minWidth: 0 }}>
+                                {isEditing ? (
+                                  <input
+                                    type="text"
+                                    className="select-control"
+                                    value={editingUserTempPass}
+                                    onChange={(e) => setEditingUserTempPass(e.target.value)}
+                                    style={{ padding: '0.3rem 0.5rem', fontSize: '0.8rem', background: 'var(--bg-input)', width: '100%' }}
+                                  />
+                                ) : (
+                                  <span style={{ color: 'var(--text-muted)', fontFamily: 'monospace', wordBreak: 'break-all', fontSize: '0.8rem' }}>{uinfo.password}</span>
+                                )}
+                              </div>
+                              {/* Col 3: Área / Fincas */}
+                              <div style={{ fontSize: '0.8rem', minWidth: 0 }}>
+                                {uname === 'admin' ? (
+                                  <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Administrador General</span>
+                                ) : (
+                                  <div>
+                                    {/* Selector de área (siempre visible pero solo editable si es admin y no editando) */}
+                                    <select
                                       className="select-control"
-                                      value={editingUserTempName}
-                                      onChange={(e) => setEditingUserTempName(e.target.value)}
-                                      disabled={uname === 'admin'}
-                                      style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', background: 'var(--bg-input)', width: '110px' }}
-                                    />
-                                  ) : (
-                                    <>
-                                      {uname}
-                                      {isRequestedDelete && (
-                                        <span style={{ fontSize: '0.7rem', color: 'orange', display: 'block', fontWeight: 500 }}>
-                                          (Baja solicitada por supervisor)
-                                        </span>
-                                      )}
-                                      {isEliminating && (
-                                        <span style={{ fontSize: '0.7rem', color: 'red', display: 'block', fontWeight: 500 }}>
-                                          (Eliminación en {daysLeft} días)
-                                        </span>
-                                      )}
-                                    </>
-                                  )}
-                                </td>
-                                <td style={{ padding: '0.75rem' }}>
-                                  {isEditing ? (
-                                    <input 
-                                      type="text"
-                                      className="select-control"
-                                      value={editingUserTempPass}
-                                      onChange={(e) => setEditingUserTempPass(e.target.value)}
-                                      style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', background: 'var(--bg-input)', width: '110px' }}
-                                    />
-                                  ) : (
-                                    <span style={{ color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                                      {uinfo.password}
+                                      value={uinfo.area || ''}
+                                      onChange={(e) => {
+                                        const updated = { ...adminUsers, [uname]: { ...uinfo, area: e.target.value } };
+                                        setAdminUsers(updated);
+                                        saveAdminUsers(updated);
+                                      }}
+                                      disabled={adminRole !== 'admin' || isInactive || isEditing}
+                                      style={{ padding: '0.2rem 0.4rem', fontSize: '0.78rem', background: 'var(--bg-input)', width: '100%' }}
+                                    >
+                                      {adminAreasList.map(areaOpt => (
+                                        <option key={areaOpt} value={areaOpt}>{areaOpt}</option>
+                                      ))}
+                                    </select>
+                                    <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)', display: 'block', marginTop: '0.15rem' }}>
+                                      {uinfo.role === 'jefe' ? 'Jefe de Área' : 'Operario'}
                                     </span>
-                                  )}
-                                </td>
-                                <td style={{ padding: '0.75rem' }}>
-                                  {uname === 'admin' ? (
-                                    <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Administrador General</span>
-                                  ) : (
-                                    <div>
-                                      <select
-                                        className="select-control"
-                                        value={uinfo.area || ''}
-                                        onChange={(e) => {
-                                          const updated = { ...adminUsers, [uname]: { ...uinfo, area: e.target.value } };
-                                          setAdminUsers(updated);
-                                          saveAdminUsers(updated);
-                                        }}
-                                        disabled={adminRole !== 'admin' || isInactive || isEditing}
-                                        style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', background: 'var(--bg-input)' }}
-                                      >
-                                        {adminAreasList.map(areaOpt => (
-                                          <option key={areaOpt} value={areaOpt}>{areaOpt}</option>
-                                        ))}
-                                      </select>
-                                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginTop: '0.25rem' }}>
-                                        {uinfo.role === 'jefe' ? 'Jefe de Área' : 'Operario'}
+                                    {!isEditing && uinfo.fincas && uinfo.fincas.length > 0 && (
+                                      <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)', display: 'block' }}>
+                                        Finca(s): {uinfo.fincas.join(', ')}
                                       </span>
-                                      {/* Fincas actuales (solo lectura cuando no está editando) */}
-                                      {!isEditing && uinfo.fincas && uinfo.fincas.length > 0 && (
-                                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginTop: '0.15rem' }}>
-                                          Finca(s): {uinfo.fincas.join(', ')}
-                                        </span>
-                                      )}
-                                      {/* Checkboxes de fincas en modo edición */}
-                                      {isEditing && (
-                                        <div style={{ marginTop: '0.4rem' }}>
-                                          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: '0.25rem', fontWeight: 600 }}>FINCAS:</div>
-                                          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                                            {['HLG', 'HSL', 'TUC'].map(f => {
-                                              const checked = editingUserTempFincas.includes(f);
-                                              return (
-                                                <label key={f} style={{
-                                                  display: 'flex', alignItems: 'center', gap: '0.25rem',
-                                                  padding: '0.2rem 0.45rem',
-                                                  borderRadius: '4px',
-                                                  background: checked ? 'rgba(56,189,248,0.15)' : 'rgba(255,255,255,0.05)',
-                                                  border: `1px solid ${checked ? 'var(--accent)' : 'rgba(255,255,255,0.12)'}`,
-                                                  cursor: 'pointer', fontSize: '0.75rem',
-                                                  color: checked ? 'var(--accent)' : 'var(--text-muted)'
-                                                }}>
-                                                  <input
-                                                    type="checkbox"
-                                                    checked={checked}
-                                                    style={{ accentColor: 'var(--accent)', cursor: 'pointer', width: '11px', height: '11px' }}
-                                                    onChange={() => {
-                                                      setEditingUserTempFincas(prev =>
-                                                        prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f]
-                                                      );
-                                                    }}
-                                                  />
-                                                  {f}
-                                                </label>
-                                              );
-                                            })}
-                                          </div>
+                                    )}
+                                    {isEditing && (
+                                      <div style={{ marginTop: '0.4rem' }}>
+                                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: '0.2rem', fontWeight: 700 }}>FINCAS:</div>
+                                        <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
+                                          {['HLG', 'HSL', 'TUC'].map(f => {
+                                            const checked = editingUserTempFincas.includes(f);
+                                            return (
+                                              <label key={f} style={{
+                                                display: 'flex', alignItems: 'center', gap: '0.2rem',
+                                                padding: '0.15rem 0.4rem',
+                                                borderRadius: '4px',
+                                                background: checked ? 'rgba(56,189,248,0.15)' : 'rgba(255,255,255,0.05)',
+                                                border: `1px solid ${checked ? 'var(--accent)' : 'rgba(255,255,255,0.12)'}`,
+                                                cursor: 'pointer', fontSize: '0.72rem',
+                                                color: checked ? 'var(--accent)' : 'var(--text-muted)'
+                                              }}>
+                                                <input
+                                                  type="checkbox"
+                                                  checked={checked}
+                                                  style={{ accentColor: 'var(--accent)', cursor: 'pointer', width: '10px', height: '10px' }}
+                                                  onChange={() => {
+                                                    setEditingUserTempFincas(prev =>
+                                                      prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f]
+                                                    );
+                                                  }}
+                                                />
+                                                {f}
+                                              </label>
+                                            );
+                                          })}
                                         </div>
-                                      )}
-                                    </div>
-                                  )}
-                                </td>
-                                <td style={{ padding: '0.75rem', textAlign: 'right' }}>
-                                  <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', alignItems: 'center' }}>
-                                    {/* Edición Inline Controles */}
-                                    {isEditing ? (
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                              {/* Col 4: Acciones */}
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'flex-end', minWidth: '90px' }}>
+                                {isEditing ? (
+                                  <>
+                                    <button
+                                      className="btn btn-primary"
+                                      onClick={() => {
+                                        const nextName = editingUserTempName.trim().toLowerCase();
+                                        const nextPass = editingUserTempPass.trim();
+                                        if (!nextName || !nextPass) { showAdminToast('El nombre y contraseña no pueden estar vacíos.', 'error'); return; }
+                                        if (nextName !== uname && adminUsers[nextName]) { showAdminToast('El nombre de usuario ya está en uso.', 'error'); return; }
+                                        const nextUsers = { ...adminUsers };
+                                        const fincasToSave = editingUserTempFincas.length > 0 ? editingUserTempFincas : (uinfo.fincas || []);
+                                        const updatedUserData = {
+                                          ...uinfo, password: nextPass, fincas: fincasToSave,
+                                          finca: fincasToSave.length === 1 ? fincasToSave[0] : (fincasToSave.length === 3 ? 'Ambas' : fincasToSave[0] || 'Ambas')
+                                        };
+                                        if (nextName !== uname) { nextUsers[nextName] = updatedUserData; delete nextUsers[uname]; }
+                                        else { nextUsers[uname] = updatedUserData; }
+                                        setAdminUsers(nextUsers); saveAdminUsers(nextUsers);
+                                        showAdminToast('Usuario modificado con éxito.');
+                                        setEditingUserKey(null); setEditingUserTempFincas([]);
+                                      }}
+                                      style={{ padding: '0.3rem 0.6rem', fontSize: '0.72rem', width: '100%', justifyContent: 'center' }}
+                                    >Guardar</button>
+                                    <button
+                                      className="btn btn-secondary"
+                                      onClick={() => { setEditingUserKey(null); setEditingUserTempFincas([]); }}
+                                      style={{ padding: '0.3rem 0.6rem', fontSize: '0.72rem', color: 'var(--text-muted)', width: '100%', justifyContent: 'center' }}
+                                    >Cancelar</button>
+                                  </>
+                                ) : (
+                                  <>
+                                    {(adminRole === 'admin' || (adminRole === 'jefe' && isUserEditable)) && uname !== 'admin' && !isInactive && (
+                                      <button
+                                        className="btn btn-secondary"
+                                        onClick={() => {
+                                          setPermisosModalUser(uname);
+                                          setPermisosTemp({
+                                            fincas: Array.isArray(uinfo.fincas) ? [...uinfo.fincas] : (uinfo.finca ? [uinfo.finca] : []),
+                                            areas_acceso: Array.isArray(uinfo.areas_acceso) ? [...uinfo.areas_acceso] : []
+                                          });
+                                        }}
+                                        style={{ padding: '0.3rem 0.5rem', fontSize: '0.72rem', color: '#a78bfa', borderColor: 'rgba(167,139,250,0.25)', width: '100%', justifyContent: 'center' }}
+                                      >🔑 Permisos</button>
+                                    )}
+                                    {isUserEditable && !isInactive && (
+                                      <button
+                                        className="btn btn-secondary"
+                                        onClick={() => {
+                                          setEditingUserKey(uname); setEditingUserTempName(uname); setEditingUserTempPass(uinfo.password);
+                                          setEditingUserTempFincas(Array.isArray(uinfo.fincas) ? [...uinfo.fincas] : (uinfo.finca ? [uinfo.finca] : []));
+                                        }}
+                                        style={{ padding: '0.3rem 0.5rem', fontSize: '0.72rem', color: 'var(--accent)', borderColor: 'rgba(0,242,254,0.2)', width: '100%', justifyContent: 'center' }}
+                                      >✏️ Editar</button>
+                                    )}
+                                    {!isInactive && uname !== 'admin' && (
+                                      <button
+                                        className="btn btn-secondary"
+                                        onClick={() => {
+                                          const nextStatus = adminRole === 'admin' ? 'eliminando' : 'solicitado_eliminar';
+                                          const updated = { ...adminUsers, [uname]: { ...uinfo, status: nextStatus, deletion_start_date: adminRole === 'admin' ? Date.now() : null } };
+                                          saveAdminUsers(updated);
+                                          showAdminToast(adminRole === 'admin' ? 'Baja aprobada. Iniciado conteo de 90 días.' : 'Baja de operario solicitada.');
+                                        }}
+                                        style={{ padding: '0.3rem 0.5rem', fontSize: '0.72rem', color: 'var(--danger)', borderColor: 'rgba(255,75,75,0.2)', width: '100%', justifyContent: 'center' }}
+                                      >🗑 Eliminar</button>
+                                    )}
+                                    {isRequestedDelete && (
                                       <>
-                                        <button 
-                                          className="btn btn-primary"
-                                          onClick={() => {
-                                            const nextName = editingUserTempName.trim().toLowerCase();
-                                            const nextPass = editingUserTempPass.trim();
-                                            if (!nextName || !nextPass) {
-                                              showAdminToast("El nombre y contraseña no pueden estar vacíos.", "error");
-                                              return;
-                                            }
-                                            if (nextName !== uname && adminUsers[nextName]) {
-                                              showAdminToast("El nombre de usuario ya está en uso.", "error");
-                                              return;
-                                            }
-                                            
-                                            const nextUsers = { ...adminUsers };
-                                            const fincasToSave = editingUserTempFincas.length > 0 ? editingUserTempFincas : (uinfo.fincas || []);
-                                            const updatedUserData = {
-                                              ...uinfo,
-                                              password: nextPass,
-                                              fincas: fincasToSave,
-                                              finca: fincasToSave.length === 1 ? fincasToSave[0] : (fincasToSave.length === 3 ? 'Ambas' : fincasToSave[0] || 'Ambas')
-                                            };
-                                            if (nextName !== uname) {
-                                              nextUsers[nextName] = updatedUserData;
-                                              delete nextUsers[uname];
-                                            } else {
-                                              nextUsers[uname] = updatedUserData;
-                                            }
-                                            
-                                            setAdminUsers(nextUsers);
-                                            saveAdminUsers(nextUsers);
-                                            showAdminToast("Usuario modificado con éxito.");
-                                            setEditingUserKey(null);
-                                            setEditingUserTempFincas([]);
-                                          }}
-                                          style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem' }}
-                                        >
-                                          Guardar
-                                        </button>
-                                        <button 
-                                          className="btn btn-secondary"
-                                          onClick={() => setEditingUserKey(null)}
-                                          style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: 'var(--text-muted)', borderColor: 'rgba(255,255,255,0.1)' }}
-                                        >
-                                          Cancelar
-                                        </button>
+                                        {adminRole === 'admin' && (
+                                          <button className="btn btn-primary" onClick={() => { const updated = { ...adminUsers, [uname]: { ...uinfo, status: 'eliminando', deletion_start_date: Date.now() } }; saveAdminUsers(updated); showAdminToast('Baja aceptada. Iniciada cuenta regresiva de 90 días.'); }} style={{ padding: '0.3rem 0.5rem', fontSize: '0.68rem', width: '100%', justifyContent: 'center' }}>Aceptar baja</button>
+                                        )}
+                                        <button className="btn btn-secondary" onClick={() => { const updated = { ...adminUsers, [uname]: { ...uinfo, status: 'activo' } }; saveAdminUsers(updated); showAdminToast('Operario reactivado correctamente.'); }} style={{ padding: '0.3rem 0.5rem', fontSize: '0.68rem', color: 'var(--accent)', width: '100%', justifyContent: 'center' }}>Reactivar</button>
                                       </>
-                                    ) : (
+                                    )}
+                                    {isEliminating && (
                                       <>
-                                        {/* Botón Permisos — visible para admin y también para jefes sobre sus propios operarios */}
-                                        {(adminRole === 'admin' || (adminRole === 'jefe' && isUserEditable)) && uname !== 'admin' && !isInactive && (
-                                          <button
-                                            className="btn btn-secondary"
-                                            onClick={() => {
-                                              setPermisosModalUser(uname);
-                                              setPermisosTemp({
-                                                fincas: Array.isArray(uinfo.fincas) ? [...uinfo.fincas] : (uinfo.finca ? [uinfo.finca] : []),
-                                                areas_acceso: Array.isArray(uinfo.areas_acceso) ? [...uinfo.areas_acceso] : []
-                                              });
-                                            }}
-                                            style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: '#a78bfa', borderColor: 'rgba(167,139,250,0.25)' }}
-                                          >
-                                            🔑 Permisos
-                                          </button>
-                                        )}
-
-                                        {/* Botón Editar */}
-                                        {isUserEditable && !isInactive && (
-                                          <button 
-                                            className="btn btn-secondary"
-                                            onClick={() => {
-                                              setEditingUserKey(uname);
-                                              setEditingUserTempName(uname);
-                                              setEditingUserTempPass(uinfo.password);
-                                              // Inicializar fincas actuales del usuario
-                                              const currentFincas = Array.isArray(uinfo.fincas) ? [...uinfo.fincas] : (uinfo.finca ? [uinfo.finca] : []);
-                                              setEditingUserTempFincas(currentFincas);
-                                            }}
-                                            style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: 'var(--accent)', borderColor: 'rgba(0, 242, 254, 0.2)' }}
-                                          >
-                                            Editar
-                                          </button>
-                                        )}
-
-                                        {/* Caso 1: Usuario activo normal */}
-                                        {!isInactive && uname !== 'admin' && (
-                                          <button 
-                                            className="btn btn-secondary" 
-                                            onClick={() => {
-                                              const nextStatus = adminRole === 'admin' ? 'eliminando' : 'solicitado_eliminar';
-                                              const updated = { 
-                                                ...adminUsers, 
-                                                [uname]: { 
-                                                  ...uinfo, 
-                                                  status: nextStatus,
-                                                  deletion_start_date: adminRole === 'admin' ? Date.now() : null
-                                                } 
-                                              };
-                                              saveAdminUsers(updated);
-                                              showAdminToast(adminRole === 'admin' ? "Baja aprobada. Iniciado conteo de 90 días." : "Baja de operario solicitada.");
-                                            }}
-                                            style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: 'var(--danger)', borderColor: 'rgba(255,75,75,0.2)' }}
-                                          >
-                                            <Trash2 size={12} />
-                                            Eliminar
-                                          </button>
-                                        )}
-
-                                        {/* Caso 2: Baja solicitada por Jefe */}
-                                        {isRequestedDelete && (
-                                          <>
-                                            {adminRole === 'admin' && (
-                                              <button 
-                                                className="btn btn-primary" 
-                                                onClick={() => {
-                                                  const updated = { 
-                                                    ...adminUsers, 
-                                                    [uname]: { 
-                                                      ...uinfo, 
-                                                      status: 'eliminando',
-                                                      deletion_start_date: Date.now()
-                                                    } 
-                                                  };
-                                                  saveAdminUsers(updated);
-                                                  showAdminToast("Baja aceptada. Iniciada cuenta regresiva de 90 días.");
-                                                }}
-                                                style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem' }}
-                                              >
-                                                Aceptar eliminación
-                                              </button>
-                                            )}
-                                            <button 
-                                              className="btn btn-secondary" 
-                                              onClick={() => {
-                                                const updated = { ...adminUsers, [uname]: { ...uinfo, status: 'activo' } };
-                                                saveAdminUsers(updated);
-                                                showAdminToast("Operario reactivado correctamente.");
-                                              }}
-                                              style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: 'var(--accent)', borderColor: 'rgba(0, 242, 254, 0.2)' }}
-                                            >
-                                              Reactivar
-                                            </button>
-                                          </>
-                                        )}
-
-                                        {/* Caso 3: Eliminando (Cuenta regresiva activa) */}
-                                        {isEliminating && (
-                                          <>
-                                            <button 
-                                              className="btn btn-secondary" 
-                                              onClick={() => {
-                                                const updated = { ...adminUsers, [uname]: { ...uinfo, status: 'activo' } };
-                                                saveAdminUsers(updated);
-                                                showAdminToast("Operario reactivado correctamente.");
-                                              }}
-                                              style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: 'var(--accent)', borderColor: 'rgba(0, 242, 254, 0.2)' }}
-                                            >
-                                              Reactivar
-                                            </button>
-                                            
-                                            {adminRole === 'admin' && (
-                                              <button 
-                                                className="btn btn-secondary" 
-                                                onClick={() => setUserToDeleteTotal(uname)}
-                                                style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: 'var(--danger)', borderColor: 'rgba(255,75,75,0.2)' }}
-                                              >
-                                                Eliminación Total
-                                              </button>
-                                            )}
-                                          </>
+                                        <button className="btn btn-secondary" onClick={() => { const updated = { ...adminUsers, [uname]: { ...uinfo, status: 'activo' } }; saveAdminUsers(updated); showAdminToast('Operario reactivado correctamente.'); }} style={{ padding: '0.3rem 0.5rem', fontSize: '0.68rem', color: 'var(--accent)', width: '100%', justifyContent: 'center' }}>Reactivar</button>
+                                        {adminRole === 'admin' && (
+                                          <button className="btn btn-secondary" onClick={() => setUserToDeleteTotal(uname)} style={{ padding: '0.3rem 0.5rem', fontSize: '0.68rem', color: 'var(--danger)', width: '100%', justifyContent: 'center' }}>Elim. Total</button>
                                         )}
                                       </>
                                     )}
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                      </tbody>
-                    </table>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
                   </div>
                 </div>
               )}
