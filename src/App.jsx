@@ -9744,101 +9744,194 @@ function App() {
                     Permisos y Áreas de Trabajo por Operario
                   </h3>
                   <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '2rem' }}>
-                    Asigna a qué área pertenece cada operario y selecciona de manera individual a qué formularios dinámicos tiene permisos de acceso. El usuario 'admin' tiene permisos generales sobre todas las áreas.
+                    Asigna a qué áreas pertenece cada operario y selecciona individualmente qué formularios tiene permitidos en cada área. Un operario puede pertenecer a varias áreas simultáneamente. El usuario 'admin' tiene permisos generales sobre todas las áreas.
                   </p>
-                  
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '2px solid var(--border-light)', textAlign: 'left', color: 'var(--text-muted)' }}>
-                        <th style={{ padding: '1rem', width: '20%' }}>Operario</th>
-                        <th style={{ padding: '1rem', width: '30%' }}>Área de Trabajo Asignada</th>
-                        <th style={{ padding: '1rem', width: '50%' }}>Formularios Permitidos (Chulear accesos)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(adminUsers)
-                        .filter(([uname, uinfo]) => {
-                          if (adminRole === 'admin') return true;
-                          // Jefes solo ven operarios de su propia área
-                          return uinfo.area === adminArea && uinfo.role !== 'admin' && uinfo.role !== 'jefe';
-                        })
-                        .map(([uname, uinfo]) => {
-                          const formsInArea = adminFormularios[uinfo.area]?.formularios || [];
+
+                  {(() => {
+                    const curJefeInfo = adminUsers[loggedAdminUser?.toLowerCase()];
+                    // Áreas que el jefe puede gestionar
+                    const jefeAreas = adminRole === 'admin'
+                      ? adminAreasList
+                      : (() => {
+                          const areas = curJefeInfo?.areas_acceso && curJefeInfo.areas_acceso.length > 0
+                            ? curJefeInfo.areas_acceso
+                            : [adminArea || curJefeInfo?.area].filter(Boolean);
+                          return areas;
+                        })();
+
+                    const operarios = Object.entries(adminUsers).filter(([uname, uinfo]) => {
+                      if (uname === 'admin') return adminRole === 'admin';
+                      if (uinfo.role === 'admin' || uinfo.role === 'jefe') return adminRole === 'admin';
+                      if (adminRole === 'admin') return true;
+                      // Jefes ven operarios que tienen al menos un área en común
+                      const opAreas = Array.isArray(uinfo.areas_acceso_operario)
+                        ? uinfo.areas_acceso_operario
+                        : (uinfo.area ? [uinfo.area] : []);
+                      return opAreas.some(a => jefeAreas.includes(a));
+                    });
+
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                        {operarios.length === 0 && (
+                          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>No hay operarios visibles para tu perfil.</p>
+                        )}
+                        {operarios.map(([uname, uinfo]) => {
+                          if (uname === 'admin') {
+                            return (
+                              <div key={uname} style={{ padding: '1.25rem', background: 'var(--bg-card)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)' }}>
+                                <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--accent)', marginBottom: '0.35rem' }}>{uname}</div>
+                                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Administrador General — Acceso a todos los formularios de todas las áreas.</span>
+                              </div>
+                            );
+                          }
+
+                          // Áreas actuales del operario (migrar de uinfo.area si existe)
+                          const opCurrentAreas = Array.isArray(uinfo.areas_acceso_operario)
+                            ? uinfo.areas_acceso_operario
+                            : (uinfo.area ? [uinfo.area] : []);
+
+                          // formularios_permitidos ahora es { "Cosecha": { "form_id": true/false }, ... }
+                          // pero también puede ser el formato viejo { "form_id": true/false }
+                          const rawPermisos = uinfo.formularios_permitidos || {};
+                          // Detectar si es formato viejo (valores son bool) o nuevo (valores son objetos)
+                          const isOldFormat = Object.values(rawPermisos).some(v => typeof v === 'boolean');
+                          const permisosPorArea = isOldFormat
+                            ? (uinfo.area ? { [uinfo.area]: rawPermisos } : {})
+                            : rawPermisos;
+
+                          const saveOperarioPermissions = (nextAreas, nextPermisosPorArea) => {
+                            const nextUser = {
+                              ...uinfo,
+                              areas_acceso_operario: nextAreas,
+                              area: nextAreas[0] || uinfo.area || '', // compat legacy
+                              formularios_permitidos: nextPermisosPorArea
+                            };
+                            const nextUsers = { ...adminUsers, [uname]: nextUser };
+                            setAdminUsers(nextUsers);
+                            saveAdminUsers(nextUsers);
+                          };
+
                           return (
-                            <tr key={uname} style={{ borderBottom: '1px solid var(--border-light)', verticalAlign: 'top' }}>
-                              <td style={{ padding: '1.25rem 1rem', fontWeight: 600 }}>{uname}</td>
-                              <td style={{ padding: '1rem' }}>
-                                {uname === 'admin' ? (
-                                  <span style={{ color: 'var(--accent)', fontWeight: 600, display: 'inline-block', paddingTop: '0.25rem' }}>
-                                    Administrador General (Control Total)
+                            <div key={uname} style={{ padding: '1.5rem', background: 'var(--bg-card)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)' }}>
+                              {/* Header operario */}
+                              <div style={{ fontWeight: 700, fontSize: '1rem', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-light)' }}>
+                                👤 {uname}
+                                {uinfo.fincas?.length > 0 && (
+                                  <span style={{ marginLeft: '0.75rem', fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>
+                                    Finca(s): {uinfo.fincas.join(', ')}
                                   </span>
-                                ) : (
-                                  <select
-                                    className="select-control"
-                                    value={uinfo.area || ''}
-                                    onChange={(e) => {
-                                      const updated = { ...adminUsers, [uname]: { ...uinfo, area: e.target.value, formularios_permitidos: {} } };
-                                      setAdminUsers(updated);
-                                      saveAdminUsers(updated);
-                                    }}
-                                    disabled={adminRole === 'jefe'}
-                                    style={{ padding: '0.4rem 0.8rem', background: 'var(--bg-input)', fontSize: '0.85rem' }}
-                                  >
-                                    <option value="">-- Sin Área (Rastreo básico) --</option>
-                                    {adminAreasList.map(area => (
-                                      <option key={area} value={area}>{area}</option>
-                                    ))}
-                                  </select>
                                 )}
-                              </td>
-                            <td style={{ padding: '1rem' }}>
-                              {uname === 'admin' ? (
-                                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', display: 'inline-block', paddingTop: '0.25rem' }}>
-                                  Acceso a todos los formularios de todas las áreas
-                                </span>
-                              ) : uinfo.area ? (
-                                formsInArea.length === 0 ? (
-                                  <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                    No hay formularios creados en esta área.
-                                  </span>
-                                ) : (
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                    {formsInArea.map(f => {
-                                      const isChecked = uinfo.formularios_permitidos ? (uinfo.formularios_permitidos[f.id] !== false) : true;
-                                      return (
-                                        <label key={f.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem' }}>
-                                          <input
-                                            type="checkbox"
-                                            checked={isChecked}
-                                            onChange={(e) => {
-                                              const currentPermisos = uinfo.formularios_permitidos || {};
-                                              const nextPermisos = { ...currentPermisos, [f.id]: e.target.checked };
-                                              const nextUser = { ...uinfo, formularios_permitidos: nextPermisos };
-                                              const nextUsers = { ...adminUsers, [uname]: nextUser };
-                                              setAdminUsers(nextUsers);
-                                              saveAdminUsers(nextUsers);
-                                            }}
-                                            style={{ cursor: 'pointer' }}
-                                          />
-                                          <span style={{ color: isChecked ? 'var(--text-main)' : 'var(--text-muted)' }}>{f.titulo}</span>
-                                        </label>
-                                      );
-                                    })}
-                                  </div>
-                                )
-                              ) : (
-                                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                  Asigna un área de trabajo primero.
-                                </span>
+                              </div>
+
+                              {/* Áreas asignadas al operario */}
+                              <div style={{ marginBottom: '1rem' }}>
+                                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '0.5rem' }}>
+                                  Áreas Asignadas
+                                </label>
+                                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                  {jefeAreas.map(area => {
+                                    const isChecked = opCurrentAreas.includes(area);
+                                    return (
+                                      <label key={area} style={{
+                                        display: 'flex', alignItems: 'center', gap: '0.4rem',
+                                        padding: '0.35rem 0.75rem',
+                                        borderRadius: 'var(--radius-sm)',
+                                        background: isChecked ? 'rgba(var(--accent-rgb, 56,189,248), 0.15)' : 'var(--bg-input)',
+                                        border: `1px solid ${isChecked ? 'var(--accent)' : 'var(--border-light)'}`,
+                                        cursor: 'pointer', fontSize: '0.85rem',
+                                        color: isChecked ? 'var(--accent)' : 'var(--text-muted)',
+                                        transition: 'all 0.15s ease'
+                                      }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={isChecked}
+                                          style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
+                                          onChange={() => {
+                                            let nextAreas;
+                                            let nextPermisos = { ...permisosPorArea };
+                                            if (isChecked) {
+                                              nextAreas = opCurrentAreas.filter(a => a !== area);
+                                              delete nextPermisos[area];
+                                            } else {
+                                              nextAreas = [...opCurrentAreas, area];
+                                              // Inicializar todos los formularios del área como permitidos
+                                              const formsInArea = adminFormularios[area]?.formularios || [];
+                                              nextPermisos[area] = {};
+                                              formsInArea.forEach(f => { nextPermisos[area][f.id] = true; });
+                                            }
+                                            saveOperarioPermissions(nextAreas, nextPermisos);
+                                          }}
+                                        />
+                                        {area}
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              {/* Formularios permitidos por área */}
+                              {opCurrentAreas.filter(a => jefeAreas.includes(a)).length > 0 && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.75rem' }}>
+                                  <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                    Formularios Permitidos por Área
+                                  </label>
+                                  {opCurrentAreas.filter(a => jefeAreas.includes(a)).map(area => {
+                                    const formsInArea = adminFormularios[area]?.formularios || [];
+                                    const areaPermisos = permisosPorArea[area] || {};
+                                    return (
+                                      <div key={area} style={{ padding: '0.75rem 1rem', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)' }}>
+                                        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent)', marginBottom: '0.5rem' }}>
+                                          📋 {area}
+                                        </div>
+                                        {formsInArea.length === 0 ? (
+                                          <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>No hay formularios creados en esta área.</span>
+                                        ) : (
+                                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                            {formsInArea.map(f => {
+                                              const isChecked = areaPermisos[f.id] !== false;
+                                              return (
+                                                <label key={f.id} style={{
+                                                  display: 'flex', alignItems: 'center', gap: '0.4rem',
+                                                  padding: '0.3rem 0.65rem',
+                                                  borderRadius: 'var(--radius-sm)',
+                                                  background: isChecked ? 'rgba(var(--accent-rgb, 56,189,248), 0.1)' : 'transparent',
+                                                  border: `1px solid ${isChecked ? 'rgba(var(--accent-rgb, 56,189,248), 0.4)' : 'var(--border-light)'}`,
+                                                  cursor: 'pointer', fontSize: '0.82rem',
+                                                  color: isChecked ? 'var(--text-main)' : 'var(--text-muted)',
+                                                  transition: 'all 0.15s ease'
+                                                }}>
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={isChecked}
+                                                    style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
+                                                    onChange={(e) => {
+                                                      const nextPermisos = {
+                                                        ...permisosPorArea,
+                                                        [area]: { ...areaPermisos, [f.id]: e.target.checked }
+                                                      };
+                                                      saveOperarioPermissions(opCurrentAreas, nextPermisos);
+                                                    }}
+                                                  />
+                                                  {f.titulo}
+                                                </label>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
                               )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
+
 
               {/* TAB 4: GESTION DE AREAS (Solo Admin) */}
               {adminActiveTab === 'areas' && adminRole === 'admin' && (

@@ -117,6 +117,10 @@ export default function App() {
       }
       
       const userArea = uData.area || '';
+      // Soporte multi-área: leer areas_acceso_operario, con fallback a area (legacy)
+      const userAreas = Array.isArray(uData.areas_acceso_operario) && uData.areas_acceso_operario.length > 0
+        ? uData.areas_acceso_operario
+        : (userArea ? [userArea] : []);
       let forms = [];
       
       if (username === 'admin') {
@@ -132,16 +136,38 @@ export default function App() {
           }
         }
       } else {
-        const formsRes = await fetch(FIREBASE_DB_URL + '/registros/configuracion_formularios/' + userArea + '.json');
-        if (formsRes.ok) {
-          const formsData = await formsRes.json();
-          if (formsData && formsData.formularios) {
-            forms = formsData.formularios;
+        // Descargar formularios de cada área asignada
+        const allFormsData = await fetch(FIREBASE_DB_URL + '/registros/configuracion_formularios.json');
+        if (allFormsData.ok) {
+          const allData = await allFormsData.json();
+          if (allData) {
+            userAreas.forEach(area => {
+              if (allData[area] && allData[area].formularios) {
+                forms = [...forms, ...allData[area].formularios];
+              }
+            });
           }
         }
-        
+
+        // Filtrar por formularios_permitidos (soporte formato nuevo anidado y formato viejo plano)
         if (uData.formularios_permitidos) {
-          forms = forms.filter(f => uData.formularios_permitidos[f.id] !== false);
+          const permisos = uData.formularios_permitidos;
+          const isOldFormat = Object.values(permisos).some(v => typeof v === 'boolean');
+          if (isOldFormat) {
+            // Formato viejo: { formId: true/false }
+            forms = forms.filter(f => permisos[f.id] !== false);
+          } else {
+            // Formato nuevo: { area: { formId: true/false } }
+            forms = forms.filter(f => {
+              // Buscar en qué área está este formulario
+              for (const area of userAreas) {
+                if (permisos[area] && f.id in permisos[area]) {
+                  return permisos[area][f.id] !== false;
+                }
+              }
+              return true; // Si no está definido, permitir
+            });
+          }
         }
       }
       
@@ -365,27 +391,51 @@ export default function App() {
               }
             }
           } else {
-            // Operario descarga solo los formularios de su área
-            const formsRes = await fetch(FIREBASE_DB_URL + '/registros/configuracion_formularios/' + userArea + '.json');
-            if (formsRes.ok) {
-              const formsData = await formsRes.json();
-              if (formsData && formsData.formularios) {
-                forms = formsData.formularios;
+            // Operario descarga formularios de todas sus áreas asignadas
+            const userProfileRes = await fetch(FIREBASE_DB_URL + '/registros/usuarios/' + typedUser + '.json');
+            let uDataSync = null;
+            if (userProfileRes.ok) {
+              uDataSync = await userProfileRes.json();
+            }
+
+            const opAreas = uDataSync && Array.isArray(uDataSync.areas_acceso_operario) && uDataSync.areas_acceso_operario.length > 0
+              ? uDataSync.areas_acceso_operario
+              : (userArea ? [userArea] : []);
+
+            const allFormsRes = await fetch(FIREBASE_DB_URL + '/registros/configuracion_formularios.json');
+            if (allFormsRes.ok) {
+              const allFormsData = await allFormsRes.json();
+              if (allFormsData) {
+                opAreas.forEach(area => {
+                  if (allFormsData[area] && allFormsData[area].formularios) {
+                    forms = [...forms, ...allFormsData[area].formularios];
+                  }
+                });
               }
             }
-            
-            // Descargar el perfil de usuario actual para filtrar por permisos chuleados
-            const userProfileRes = await fetch(FIREBASE_DB_URL + '/registros/usuarios/' + typedUser + '.json');
-            if (userProfileRes.ok) {
-              const uData = await userProfileRes.json();
-              if (uData) {
-                if (uData.formularios_permitidos) {
-                  forms = forms.filter(f => uData.formularios_permitidos[f.id] !== false);
-                }
-                const fincas = uData.fincas || (uData.finca ? [uData.finca] : ['HLG', 'HSL', 'TUC']);
-                await AsyncStorage.setItem('@user_fincas_' + typedUser, JSON.stringify(fincas));
-                setUserFincas(fincas);
+
+            // Filtrar por formularios_permitidos (nuevo formato anidado o viejo plano)
+            if (uDataSync && uDataSync.formularios_permitidos) {
+              const permisos = uDataSync.formularios_permitidos;
+              const isOldFormat = Object.values(permisos).some(v => typeof v === 'boolean');
+              if (isOldFormat) {
+                forms = forms.filter(f => permisos[f.id] !== false);
+              } else {
+                forms = forms.filter(f => {
+                  for (const area of opAreas) {
+                    if (permisos[area] && f.id in permisos[area]) {
+                      return permisos[area][f.id] !== false;
+                    }
+                  }
+                  return true;
+                });
               }
+            }
+
+            if (uDataSync) {
+              const fincas = uDataSync.fincas || (uDataSync.finca ? [uDataSync.finca] : ['HLG', 'HSL', 'TUC']);
+              await AsyncStorage.setItem('@user_fincas_' + typedUser, JSON.stringify(fincas));
+              setUserFincas(fincas);
             }
           }
         } catch (fErr) {
