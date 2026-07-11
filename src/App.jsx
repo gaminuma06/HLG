@@ -801,6 +801,7 @@ function App() {
   const [editingUserKey, setEditingUserKey] = useState(null);
   const [editingUserTempName, setEditingUserTempName] = useState('');
   const [editingUserTempPass, setEditingUserTempPass] = useState('');
+  const [editingUserTempFincas, setEditingUserTempFincas] = useState([]); // fincas editables en modo edición
   const [draggedFieldIdx, setDraggedFieldIdx] = useState(null);
   const [permisosModalUser, setPermisosModalUser] = useState(null); // nombre del usuario cuyo modal de permisos está abierto
   const [permisosTemp, setPermisosTemp] = useState({ fincas: [], areas_acceso: [] }); // estado local temporal del modal
@@ -9074,6 +9075,46 @@ function App() {
                                       <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginTop: '0.25rem' }}>
                                         {uinfo.role === 'jefe' ? 'Jefe de Área' : 'Operario'}
                                       </span>
+                                      {/* Fincas actuales (solo lectura cuando no está editando) */}
+                                      {!isEditing && uinfo.fincas && uinfo.fincas.length > 0 && (
+                                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginTop: '0.15rem' }}>
+                                          Finca(s): {uinfo.fincas.join(', ')}
+                                        </span>
+                                      )}
+                                      {/* Checkboxes de fincas en modo edición */}
+                                      {isEditing && (
+                                        <div style={{ marginTop: '0.4rem' }}>
+                                          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: '0.25rem', fontWeight: 600 }}>FINCAS:</div>
+                                          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                                            {['HLG', 'HSL', 'TUC'].map(f => {
+                                              const checked = editingUserTempFincas.includes(f);
+                                              return (
+                                                <label key={f} style={{
+                                                  display: 'flex', alignItems: 'center', gap: '0.25rem',
+                                                  padding: '0.2rem 0.45rem',
+                                                  borderRadius: '4px',
+                                                  background: checked ? 'rgba(56,189,248,0.15)' : 'rgba(255,255,255,0.05)',
+                                                  border: `1px solid ${checked ? 'var(--accent)' : 'rgba(255,255,255,0.12)'}`,
+                                                  cursor: 'pointer', fontSize: '0.75rem',
+                                                  color: checked ? 'var(--accent)' : 'var(--text-muted)'
+                                                }}>
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={checked}
+                                                    style={{ accentColor: 'var(--accent)', cursor: 'pointer', width: '11px', height: '11px' }}
+                                                    onChange={() => {
+                                                      setEditingUserTempFincas(prev =>
+                                                        prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f]
+                                                      );
+                                                    }}
+                                                  />
+                                                  {f}
+                                                </label>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
                                   )}
                                 </td>
@@ -9097,17 +9138,25 @@ function App() {
                                             }
                                             
                                             const nextUsers = { ...adminUsers };
+                                            const fincasToSave = editingUserTempFincas.length > 0 ? editingUserTempFincas : (uinfo.fincas || []);
+                                            const updatedUserData = {
+                                              ...uinfo,
+                                              password: nextPass,
+                                              fincas: fincasToSave,
+                                              finca: fincasToSave.length === 1 ? fincasToSave[0] : (fincasToSave.length === 3 ? 'Ambas' : fincasToSave[0] || 'Ambas')
+                                            };
                                             if (nextName !== uname) {
-                                              nextUsers[nextName] = { ...uinfo, password: nextPass };
+                                              nextUsers[nextName] = updatedUserData;
                                               delete nextUsers[uname];
                                             } else {
-                                              nextUsers[uname] = { ...uinfo, password: nextPass };
+                                              nextUsers[uname] = updatedUserData;
                                             }
                                             
                                             setAdminUsers(nextUsers);
                                             saveAdminUsers(nextUsers);
                                             showAdminToast("Usuario modificado con éxito.");
                                             setEditingUserKey(null);
+                                            setEditingUserTempFincas([]);
                                           }}
                                           style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem' }}
                                         >
@@ -9148,6 +9197,9 @@ function App() {
                                               setEditingUserKey(uname);
                                               setEditingUserTempName(uname);
                                               setEditingUserTempPass(uinfo.password);
+                                              // Inicializar fincas actuales del usuario
+                                              const currentFincas = Array.isArray(uinfo.fincas) ? [...uinfo.fincas] : (uinfo.finca ? [uinfo.finca] : []);
+                                              setEditingUserTempFincas(currentFincas);
                                             }}
                                             style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: 'var(--accent)', borderColor: 'rgba(0, 242, 254, 0.2)' }}
                                           >
