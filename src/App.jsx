@@ -8953,7 +8953,7 @@ function App() {
                     </h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                       {/* Cabecera */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '100px 100px 1fr 100px', gap: '0.4rem', padding: '0.3rem 0.5rem', fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border-light)' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '100px 110px 160px 1fr', gap: '0.4rem', padding: '0.3rem 0.5rem', fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border-light)' }}>
                         <span>Usuario</span>
                         <span>Contraseña</span>
                         <span>Área / Fincas</span>
@@ -8984,7 +8984,7 @@ function App() {
                               key={uname}
                               style={{
                                 display: 'grid',
-                                gridTemplateColumns: '100px 100px 1fr 100px',
+                                gridTemplateColumns: '100px 110px 160px 1fr',
                                 gap: '0.4rem',
                                 alignItems: 'start',
                                 padding: '0.4rem 0.5rem',
@@ -9096,7 +9096,7 @@ function App() {
                                 )}
                               </div>
                               {/* Col 4: Acciones */}
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'flex-end', minWidth: '90px' }}>
+                              <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: '0.25rem', alignItems: 'flex-start', alignContent: 'flex-start' }}>
                                 {isEditing ? (
                                   <>
                                     <button
@@ -9118,12 +9118,12 @@ function App() {
                                         showAdminToast('Usuario modificado con éxito.');
                                         setEditingUserKey(null); setEditingUserTempFincas([]);
                                       }}
-                                      style={{ padding: '0.3rem 0.6rem', fontSize: '0.72rem', width: '100%', justifyContent: 'center' }}
+                                      style={{ padding: '0.28rem 0.5rem', fontSize: '0.7rem', justifyContent: 'center' }}
                                     >Guardar</button>
                                     <button
                                       className="btn btn-secondary"
                                       onClick={() => { setEditingUserKey(null); setEditingUserTempFincas([]); }}
-                                      style={{ padding: '0.3rem 0.6rem', fontSize: '0.72rem', color: 'var(--text-muted)', width: '100%', justifyContent: 'center' }}
+                                      style={{ padding: '0.28rem 0.5rem', fontSize: '0.7rem', color: 'var(--text-muted)', justifyContent: 'center' }}
                                     >Cancelar</button>
                                   </>
                                 ) : (
@@ -9138,7 +9138,7 @@ function App() {
                                             areas_acceso: Array.isArray(uinfo.areas_acceso) ? [...uinfo.areas_acceso] : []
                                           });
                                         }}
-                                        style={{ padding: '0.3rem 0.5rem', fontSize: '0.72rem', color: '#a78bfa', borderColor: 'rgba(167,139,250,0.25)', width: '100%', justifyContent: 'center' }}
+                                        style={{ padding: '0.28rem 0.5rem', fontSize: '0.7rem', color: '#a78bfa', borderColor: 'rgba(167,139,250,0.25)', justifyContent: 'center' }}
                                       >🔑 Permisos</button>
                                     )}
                                     {isUserEditable && !isInactive && (
@@ -9148,7 +9148,7 @@ function App() {
                                           setEditingUserKey(uname); setEditingUserTempName(uname); setEditingUserTempPass(uinfo.password);
                                           setEditingUserTempFincas(Array.isArray(uinfo.fincas) ? [...uinfo.fincas] : (uinfo.finca ? [uinfo.finca] : []));
                                         }}
-                                        style={{ padding: '0.3rem 0.5rem', fontSize: '0.72rem', color: 'var(--accent)', borderColor: 'rgba(0,242,254,0.2)', width: '100%', justifyContent: 'center' }}
+                                        style={{ padding: '0.28rem 0.5rem', fontSize: '0.7rem', color: 'var(--accent)', borderColor: 'rgba(0,242,254,0.2)', justifyContent: 'center' }}
                                       >✏️ Editar</button>
                                     )}
                                     {!isInactive && uname !== 'admin' && (
@@ -9160,22 +9160,22 @@ function App() {
                                           saveAdminUsers(updated);
                                           showAdminToast(adminRole === 'admin' ? 'Baja aprobada. Iniciado conteo de 90 días.' : 'Baja de operario solicitada.');
                                         }}
-                                        style={{ padding: '0.3rem 0.5rem', fontSize: '0.72rem', color: 'var(--danger)', borderColor: 'rgba(255,75,75,0.2)', width: '100%', justifyContent: 'center' }}
+                                        style={{ padding: '0.28rem 0.5rem', fontSize: '0.7rem', color: 'var(--danger)', borderColor: 'rgba(255,75,75,0.2)', justifyContent: 'center' }}
                                       >🗑 Eliminar</button>
                                     )}
                                     {isRequestedDelete && (
                                       <>
                                         {adminRole === 'admin' && (
-                                          <button className="btn btn-primary" onClick={() => { const updated = { ...adminUsers, [uname]: { ...uinfo, status: 'eliminando', deletion_start_date: Date.now() } }; saveAdminUsers(updated); showAdminToast('Baja aceptada. Iniciada cuenta regresiva de 90 días.'); }} style={{ padding: '0.3rem 0.5rem', fontSize: '0.68rem', width: '100%', justifyContent: 'center' }}>Aceptar baja</button>
+                                          <button className="btn btn-primary" onClick={() => { const updated = { ...adminUsers, [uname]: { ...uinfo, status: 'eliminando', deletion_start_date: Date.now() } }; saveAdminUsers(updated); showAdminToast('Baja aceptada. Iniciada cuenta regresiva de 90 días.'); }} style={{ padding: '0.28rem 0.5rem', fontSize: '0.68rem', justifyContent: 'center' }}>Aceptar baja</button>
                                         )}
-                                        <button className="btn btn-secondary" onClick={() => { const updated = { ...adminUsers, [uname]: { ...uinfo, status: 'activo' } }; saveAdminUsers(updated); showAdminToast('Operario reactivado correctamente.'); }} style={{ padding: '0.3rem 0.5rem', fontSize: '0.68rem', color: 'var(--accent)', width: '100%', justifyContent: 'center' }}>Reactivar</button>
+                                        <button className="btn btn-secondary" onClick={() => { const updated = { ...adminUsers, [uname]: { ...uinfo, status: 'activo' } }; saveAdminUsers(updated); showAdminToast('Operario reactivado correctamente.'); }} style={{ padding: '0.28rem 0.5rem', fontSize: '0.68rem', color: 'var(--accent)', justifyContent: 'center' }}>Reactivar</button>
                                       </>
                                     )}
                                     {isEliminating && (
                                       <>
-                                        <button className="btn btn-secondary" onClick={() => { const updated = { ...adminUsers, [uname]: { ...uinfo, status: 'activo' } }; saveAdminUsers(updated); showAdminToast('Operario reactivado correctamente.'); }} style={{ padding: '0.3rem 0.5rem', fontSize: '0.68rem', color: 'var(--accent)', width: '100%', justifyContent: 'center' }}>Reactivar</button>
+                                        <button className="btn btn-secondary" onClick={() => { const updated = { ...adminUsers, [uname]: { ...uinfo, status: 'activo' } }; saveAdminUsers(updated); showAdminToast('Operario reactivado correctamente.'); }} style={{ padding: '0.28rem 0.5rem', fontSize: '0.68rem', color: 'var(--accent)', justifyContent: 'center' }}>Reactivar</button>
                                         {adminRole === 'admin' && (
-                                          <button className="btn btn-secondary" onClick={() => setUserToDeleteTotal(uname)} style={{ padding: '0.3rem 0.5rem', fontSize: '0.68rem', color: 'var(--danger)', width: '100%', justifyContent: 'center' }}>Elim. Total</button>
+                                          <button className="btn btn-secondary" onClick={() => setUserToDeleteTotal(uname)} style={{ padding: '0.28rem 0.5rem', fontSize: '0.68rem', color: 'var(--danger)', justifyContent: 'center' }}>Elim. Total</button>
                                         )}
                                       </>
                                     )}
