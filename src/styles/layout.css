@@ -1421,6 +1421,9 @@
   font-weight: 500 !important;
   text-shadow: 0 0 2px #000, 0 0 4px #000 !important;
   padding: 0 !important;
+  margin: 0 !important;
+  text-align: center !important;
+  white-space: nowrap !important;
 }
 
 .discreet-lote-tooltip::before {

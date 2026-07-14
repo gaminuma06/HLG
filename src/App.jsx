@@ -959,10 +959,19 @@ function App() {
     if (!selectedLotInfo) return null;
     try {
       const layer = L.geoJSON(selectedLotInfo);
-      const bounds = layer.getBounds();
-      if (bounds.isValid()) {
-        return bounds.getCenter();
+      let center = null;
+      layer.eachLayer((child) => {
+        if (child && typeof child.getCenter === 'function') {
+          center = child.getCenter();
+        }
+      });
+      if (!center) {
+        const bounds = layer.getBounds();
+        if (bounds.isValid()) {
+          center = bounds.getCenter();
+        }
       }
+      return center;
     } catch (e) {
       console.error("Error calculating lot center:", e);
     }
@@ -975,9 +984,19 @@ function App() {
     activeMapGeoJSON.features.forEach((feature, idx) => {
       try {
         const layer = L.geoJSON(feature);
-        const bounds = layer.getBounds();
-        if (bounds.isValid()) {
-          const center = bounds.getCenter();
+        let center = null;
+        layer.eachLayer((child) => {
+          if (child && typeof child.getCenter === 'function') {
+            center = child.getCenter();
+          }
+        });
+        if (!center) {
+          const bounds = layer.getBounds();
+          if (bounds.isValid()) {
+            center = bounds.getCenter();
+          }
+        }
+        if (center) {
           const loteName = feature.properties.NOMBRELOTE || feature.properties.nombrelote || feature.properties['NOMBRE LOT'] || feature.properties.lote || feature.properties.LOTE || feature.properties.name || feature.properties.id || '';
           centers.push({
             id: feature.id || idx,
