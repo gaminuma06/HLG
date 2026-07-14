@@ -5647,19 +5647,19 @@ function App() {
                     <div style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '0.75rem',
+                      gap: '0.6rem',
                       flexWrap: 'wrap',
-                      padding: '0.4rem 0.75rem',
-                      background: 'rgba(255, 255, 255, 0.02)',
-                      border: '1px solid rgba(255, 255, 255, 0.05)',
-                      borderRadius: 'var(--radius-sm)',
-                      marginTop: '-0.5rem',
-                      marginBottom: '0.25rem'
+                      padding: '0.15rem 0',
+                      background: 'transparent',
+                      border: 'none',
+                      marginTop: '-0.9rem',
+                      marginBottom: '0.4rem',
+                      opacity: 0.85
                     }}>
-                      <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      <span style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255, 255, 255, 0.35)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                         Capas:
                       </span>
-                      <div style={{ display: 'flex', gap: '0.9rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: '0.8rem', flexWrap: 'wrap', alignItems: 'center' }}>
                         {[
                           { key: 'lotes', label: 'Lotes' },
                           { key: 'palmas', label: 'Palmas' },
@@ -5677,12 +5677,13 @@ function App() {
                               style={{
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '0.3rem',
-                                fontSize: '0.78rem',
+                                gap: '0.25rem',
+                                fontSize: '0.72rem',
                                 cursor: 'pointer',
-                                color: checked ? 'var(--accent)' : 'var(--text-muted)',
+                                color: checked ? 'var(--accent)' : 'rgba(255, 255, 255, 0.4)',
+                                opacity: checked ? 0.9 : 0.45,
                                 userSelect: 'none',
-                                transition: 'color 0.2s ease',
+                                transition: 'all 0.2s ease',
                               }}
                             >
                               <input
@@ -5697,9 +5698,10 @@ function App() {
                                 style={{
                                   accentColor: 'var(--accent)',
                                   cursor: 'pointer',
-                                  width: '12px',
-                                  height: '12px',
-                                  margin: 0
+                                  width: '10px',
+                                  height: '10px',
+                                  margin: 0,
+                                  opacity: checked ? 0.9 : 0.5
                                 }}
                               />
                               <span>{filter.label}</span>
