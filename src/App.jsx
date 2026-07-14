@@ -5654,7 +5654,7 @@ function App() {
                       border: '1px solid rgba(255, 255, 255, 0.035)',
                       borderRadius: 'var(--radius-sm)',
                       marginTop: '-0.5rem',
-                      marginBottom: '0.35rem',
+                      marginBottom: '-0.45rem',
                       opacity: 0.95
                     }}>
                       <span style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255, 255, 255, 0.35)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
