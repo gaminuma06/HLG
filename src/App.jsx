@@ -6379,12 +6379,7 @@ function App() {
                               let fillOpacity = isSel ? 0.2 : 0.08;
                               let weight = isSel ? 2.5 : 0.8;
 
-                              if (trackActive) {
-                                fillColor = 'rgba(56, 189, 248, 0.06)';
-                                fillOpacity = 0.06;
-                                borderColor = 'rgba(56, 189, 248, 0.45)';
-                                weight = 1.1;
-                              } else if (showPluvZones) {
+                              if (showPluvZones) {
                                 const pluvColor = getPastelColorForPluviometro(pluvVal);
                                 fillColor = pluvColor;
                                 fillOpacity = isSel ? 0.35 : 0.16;
