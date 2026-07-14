@@ -810,14 +810,14 @@ function App() {
   const [newUserRoleLocal, setNewUserRoleLocal] = useState('operario'); // rol seleccionado al crear nuevo usuario (controla vista de checkboxes)
   const [newCreatedJefeAreas, setNewCreatedJefeAreas] = useState([]); // áreas seleccionadas cuando se crea un jefe
   const [mapFilters, setMapFilters] = useState({
-    lotes: true,
+    lotes: false,
     palmas: false,
     rios: false,
     canos: false,
     vias: false,
     bosque: false,
     canales: false,
-    pluviometros: true
+    pluviometros: false
   });
 
   const canJefeManageUser = (jefeUname, operarioUinfo) => {
@@ -955,25 +955,60 @@ function App() {
     return PASTEL_COLORS[idx % PASTEL_COLORS.length];
   }, [activePluvs]);
 
+  const getFeatureCentroid = (feature) => {
+    if (!feature || !feature.geometry) return null;
+    const geom = feature.geometry;
+    let lats = [];
+    let lons = [];
+
+    const processRing = (ring) => {
+      if (Array.isArray(ring)) {
+        ring.forEach(pt => {
+          if (Array.isArray(pt) && pt.length >= 2) {
+            lons.push(pt[0]);
+            lats.push(pt[1]);
+          }
+        });
+      }
+    };
+
+    if (geom.type === 'Polygon') {
+      if (geom.coordinates && geom.coordinates[0]) {
+        processRing(geom.coordinates[0]);
+      }
+    } else if (geom.type === 'MultiPolygon') {
+      if (geom.coordinates) {
+        geom.coordinates.forEach(poly => {
+          if (poly && poly[0]) {
+            processRing(poly[0]);
+          }
+        });
+      }
+    }
+
+    if (lats.length > 0 && lons.length > 0) {
+      const avgLat = lats.reduce((sum, val) => sum + val, 0) / lats.length;
+      const avgLon = lons.reduce((sum, val) => sum + val, 0) / lons.length;
+      return [avgLat, avgLon];
+    }
+    return null;
+  };
+
   const selectedLotCenter = useMemo(() => {
     if (!selectedLotInfo) return null;
+    // Try custom centroid first
+    const centroid = getFeatureCentroid(selectedLotInfo);
+    if (centroid) return centroid;
+    
     try {
       const layer = L.geoJSON(selectedLotInfo);
-      let center = null;
-      layer.eachLayer((child) => {
-        if (child && typeof child.getCenter === 'function') {
-          center = child.getCenter();
-        }
-      });
-      if (!center) {
-        const bounds = layer.getBounds();
-        if (bounds.isValid()) {
-          center = bounds.getCenter();
-        }
+      const bounds = layer.getBounds();
+      if (bounds.isValid()) {
+        const center = bounds.getCenter();
+        return [center.lat, center.lng];
       }
-      return center;
     } catch (e) {
-      console.error("Error calculating lot center:", e);
+      console.error("Error calculating selected lot center:", e);
     }
     return null;
   }, [selectedLotInfo]);
@@ -982,30 +1017,30 @@ function App() {
     if (!activeMapGeoJSON || !activeMapGeoJSON.features) return [];
     const centers = [];
     activeMapGeoJSON.features.forEach((feature, idx) => {
-      try {
-        const layer = L.geoJSON(feature);
-        let center = null;
-        layer.eachLayer((child) => {
-          if (child && typeof child.getCenter === 'function') {
-            center = child.getCenter();
-          }
-        });
-        if (!center) {
+      // Try custom centroid first
+      let center = getFeatureCentroid(feature);
+      
+      // Fallback to bounds if custom centroid fails
+      if (!center) {
+        try {
+          const layer = L.geoJSON(feature);
           const bounds = layer.getBounds();
           if (bounds.isValid()) {
-            center = bounds.getCenter();
+            const bc = bounds.getCenter();
+            center = [bc.lat, bc.lng];
           }
+        } catch (e) {
+          // Silently skip if there's any invalid geometry
         }
-        if (center) {
-          const loteName = feature.properties.NOMBRELOTE || feature.properties.nombrelote || feature.properties['NOMBRE LOT'] || feature.properties.lote || feature.properties.LOTE || feature.properties.name || feature.properties.id || '';
-          centers.push({
-            id: feature.id || idx,
-            name: loteName,
-            center: [center.lat, center.lng]
-          });
-        }
-      } catch (e) {
-        // Silently skip if there's any invalid geometry
+      }
+
+      if (center) {
+        const loteName = feature.properties.NOMBRELOTE || feature.properties.nombrelote || feature.properties['NOMBRE LOT'] || feature.properties.lote || feature.properties.LOTE || feature.properties.name || feature.properties.id || '';
+        centers.push({
+          id: feature.id || idx,
+          name: loteName,
+          center: center
+        });
       }
     });
     return centers;
