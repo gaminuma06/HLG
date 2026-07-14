@@ -5649,12 +5649,13 @@ function App() {
                       alignItems: 'center',
                       gap: '0.6rem',
                       flexWrap: 'wrap',
-                      padding: '0.15rem 0',
-                      background: 'transparent',
-                      border: 'none',
-                      marginTop: '-0.9rem',
-                      marginBottom: '0.4rem',
-                      opacity: 0.85
+                      padding: '0.35rem 0.6rem',
+                      background: 'rgba(255, 255, 255, 0.015)',
+                      border: '1px solid rgba(255, 255, 255, 0.035)',
+                      borderRadius: 'var(--radius-sm)',
+                      marginTop: '-0.5rem',
+                      marginBottom: '0.35rem',
+                      opacity: 0.95
                     }}>
                       <span style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255, 255, 255, 0.35)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                         Capas:
