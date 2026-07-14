@@ -809,6 +809,16 @@ function App() {
   const [permisosSearchQuery, setPermisosSearchQuery] = useState(''); // buscador en tab Permisos
   const [newUserRoleLocal, setNewUserRoleLocal] = useState('operario'); // rol seleccionado al crear nuevo usuario (controla vista de checkboxes)
   const [newCreatedJefeAreas, setNewCreatedJefeAreas] = useState([]); // áreas seleccionadas cuando se crea un jefe
+  const [mapFilters, setMapFilters] = useState({
+    lotes: true,
+    palmas: false,
+    rios: false,
+    canos: false,
+    vias: false,
+    bosque: false,
+    canales: false,
+    pluviometros: true
+  });
 
   const canJefeManageUser = (jefeUname, operarioUinfo) => {
     if (adminRole === 'admin') return true;
@@ -5631,6 +5641,72 @@ function App() {
                         <Layers size={14} />
                         <span>Fondo Satelital: {useSatelliteBackground && trackActive ? 'ACTIVO' : 'APAGADO'}</span>
                       </button>
+                    </div>
+
+                    {/* Filtros de Capas del Mapa */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.75rem',
+                      flexWrap: 'wrap',
+                      padding: '0.4rem 0.75rem',
+                      background: 'rgba(255, 255, 255, 0.02)',
+                      border: '1px solid rgba(255, 255, 255, 0.05)',
+                      borderRadius: 'var(--radius-sm)',
+                      marginTop: '-0.5rem',
+                      marginBottom: '0.25rem'
+                    }}>
+                      <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Capas:
+                      </span>
+                      <div style={{ display: 'flex', gap: '0.9rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                        {[
+                          { key: 'lotes', label: 'Lotes' },
+                          { key: 'palmas', label: 'Palmas' },
+                          { key: 'rios', label: 'Ríos' },
+                          { key: 'canos', label: 'Caños' },
+                          { key: 'vias', label: 'Vías' },
+                          { key: 'bosque', label: 'Bosque' },
+                          { key: 'canales', label: 'Canales' },
+                          { key: 'pluviometros', label: 'Pluviómetros' }
+                        ].map((filter) => {
+                          const checked = mapFilters[filter.key];
+                          return (
+                            <label
+                              key={filter.key}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.3rem',
+                                fontSize: '0.78rem',
+                                cursor: 'pointer',
+                                color: checked ? 'var(--accent)' : 'var(--text-muted)',
+                                userSelect: 'none',
+                                transition: 'color 0.2s ease',
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => {
+                                  setMapFilters(prev => ({
+                                    ...prev,
+                                    [filter.key]: !prev[filter.key]
+                                  }));
+                                }}
+                                style={{
+                                  accentColor: 'var(--accent)',
+                                  cursor: 'pointer',
+                                  width: '12px',
+                                  height: '12px',
+                                  margin: 0
+                                }}
+                              />
+                              <span>{filter.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
                     </div>
 
                     {/* Diseño en dos columnas: Mapa a la izquierda, Tarjeta a la derecha */}
