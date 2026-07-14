@@ -5855,17 +5855,6 @@ function App() {
                                   <span>{filter.label}</span>
                                 </label>
 
-                                <span style={{ color: 'rgba(255, 255, 255, 0.25)', fontSize: '0.72rem', userSelect: 'none' }}>-</span>
-                                <span style={{ 
-                                  color: checked ? 'var(--accent)' : 'rgba(255, 255, 255, 0.25)', 
-                                  fontSize: '0.72rem', 
-                                  fontWeight: '600',
-                                  opacity: checked ? 1 : 0.4,
-                                  userSelect: 'none'
-                                }}>
-                                  Z
-                                </span>
-
                                 <button
                                   type="button"
                                   disabled={!checked}
