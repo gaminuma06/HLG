@@ -5877,6 +5877,56 @@ function App() {
                                     boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
                                     padding: '0.25rem 0'
                                   }}>
+                                    {/* Opción "Todos" al principio del listado */}
+                                    {(() => {
+                                      const selectedName = selectedLotInfo?.properties?.NOMBRELOTE || selectedLotInfo?.properties?.nombrelote || selectedLotInfo?.properties?.['NOMBRE LOT'] || selectedLotInfo?.properties?.lote || selectedLotInfo?.properties?.LOTE || selectedLotInfo?.properties?.name || selectedLotInfo?.properties?.id || '';
+                                      const isTodosSelected = selectedName === 'Todos';
+                                      return (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedLotInfo({
+                                              properties: { NOMBRELOTE: 'Todos' },
+                                              isAll: true
+                                            });
+                                            setPalmasMenuOpen(false);
+                                          }}
+                                          style={{
+                                            display: 'block',
+                                            width: '100%',
+                                            textAlign: 'left',
+                                            background: isTodosSelected ? 'rgba(0, 242, 254, 0.12)' : 'transparent',
+                                            border: 'none',
+                                            color: isTodosSelected ? '#00f2fe' : 'rgba(255, 255, 255, 0.75)',
+                                            padding: '0.35rem 0.6rem',
+                                            fontSize: '0.72rem',
+                                            fontWeight: '600',
+                                            cursor: 'pointer',
+                                            whiteSpace: 'nowrap',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            transition: 'all 0.15s ease',
+                                            borderBottom: '1px solid rgba(255, 255, 255, 0.04)'
+                                          }}
+                                          onMouseEnter={(e) => {
+                                            if (!isTodosSelected) {
+                                              e.target.style.background = 'rgba(255, 255, 255, 0.05)';
+                                              e.target.style.color = '#fff';
+                                            }
+                                          }}
+                                          onMouseLeave={(e) => {
+                                            if (!isTodosSelected) {
+                                              e.target.style.background = 'transparent';
+                                              e.target.style.color = 'rgba(255, 255, 255, 0.75)';
+                                            }
+                                          }}
+                                        >
+                                          Todos
+                                        </button>
+                                      );
+                                    })()}
+
                                     {activeMapGeoJSON?.features && activeMapGeoJSON.features.length > 0 ? (
                                       [...activeMapGeoJSON.features]
                                         .map((f, fidx) => {
