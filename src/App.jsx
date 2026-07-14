@@ -351,10 +351,15 @@ function FitMapBounds({ geojson, triggerReset }) {
   return null;
 }
 
-function FitSelectedLotBounds({ selectedLot, selectedPalmasLot, mapFilters, trackActive }) {
+function FitSelectedLotBounds({ selectedLot, selectedPalmasLot, mapFilters, trackActive, zoomFocusTarget }) {
   const map = useMap();
   useEffect(() => {
     if (!map) return;
+    
+    // Si la prioridad de foco es para el track, no hacer zoom al lote ni bloquear interacciones
+    if (zoomFocusTarget === 'track') {
+      return;
+    }
     
     // Si Lotes está activo, controla el zoom. Si no, pero Palmas sí está activo, Palmas controla el zoom.
     let activeZoomLot = null;
@@ -364,7 +369,7 @@ function FitSelectedLotBounds({ selectedLot, selectedPalmasLot, mapFilters, trac
       activeZoomLot = selectedPalmasLot;
     }
     
-    if (activeZoomLot && !activeZoomLot.isAll && !trackActive) {
+    if (activeZoomLot && !activeZoomLot.isAll) {
       try {
         const layer = L.geoJSON(activeZoomLot);
         const bounds = layer.getBounds();
@@ -386,15 +391,24 @@ function FitSelectedLotBounds({ selectedLot, selectedPalmasLot, mapFilters, trac
         console.error("Error focusing on selected lot:", e);
       }
     } else {
-      // Si se selecciona Todo (o no hay selección), permitir paneo manual pero desactivar zoom manual
-      if (map.dragging) map.dragging.enable();
-      if (map.doubleClickZoom) map.doubleClickZoom.disable();
-      if (map.scrollWheelZoom) map.scrollWheelZoom.disable();
-      if (map.boxZoom) map.boxZoom.disable();
-      if (map.keyboard) map.keyboard.disable();
-      if (map.touchZoom) map.touchZoom.disable();
+      // Si se selecciona Todo (o no hay selección), permitir paneo manual y configurar zoom manual según trackActive
+      if (trackActive) {
+        if (map.dragging) map.dragging.enable();
+        if (map.doubleClickZoom) map.doubleClickZoom.enable();
+        if (map.scrollWheelZoom) map.scrollWheelZoom.enable();
+        if (map.boxZoom) map.boxZoom.enable();
+        if (map.keyboard) map.keyboard.enable();
+        if (map.touchZoom) map.touchZoom.enable();
+      } else {
+        if (map.dragging) map.dragging.enable();
+        if (map.doubleClickZoom) map.doubleClickZoom.disable();
+        if (map.scrollWheelZoom) map.scrollWheelZoom.disable();
+        if (map.boxZoom) map.boxZoom.disable();
+        if (map.keyboard) map.keyboard.disable();
+        if (map.touchZoom) map.touchZoom.disable();
+      }
     }
-  }, [selectedLot, selectedPalmasLot, mapFilters?.lotes, mapFilters?.palmas, map, trackActive]);
+  }, [selectedLot, selectedPalmasLot, mapFilters?.lotes, mapFilters?.palmas, map, trackActive, zoomFocusTarget]);
   return null;
 }
 
@@ -801,6 +815,7 @@ function App() {
   const [fincaMaps, setFincaMaps] = useState({});
   const [selectedLotInfo, setSelectedLotInfo] = useState(null);
   const [selectedPalmasLotInfo, setSelectedPalmasLotInfo] = useState(null);
+  const [zoomFocusTarget, setZoomFocusTarget] = useState('none'); // 'none' | 'lot' | 'track'
   const [showPluvZones, setShowPluvZones] = useState(false);
   const [humDisplayMode, setHumDisplayMode] = useState('off'); // 'off', 'moisture', 'fertility'
   const [mapUploadFinca, setMapUploadFinca] = useState('HLG');
@@ -2521,10 +2536,12 @@ function App() {
       setHumDisplayMode('off'); // Humedad desactivado
       setSelectedLotInfo(null); // Limpiar lote seleccionado
       setSelectedTrackId(null); // Limpiar track seleccionado
+      setZoomFocusTarget('none');
       setPlaybackIndex(0); // Reiniciar animación
       setIsPlaying(false); // Pausar
     } else {
       setSelectedTrackId(null);
+      setZoomFocusTarget('lot');
       setPlaybackIndex(0);
       setIsPlaying(false);
     }
@@ -5949,6 +5966,7 @@ function App() {
                                               properties: { NOMBRELOTE: 'Todos' },
                                               isAll: true
                                             });
+                                            setZoomFocusTarget('lot');
                                             setLotesMenuOpen(false);
                                           }}
                                           style={{
@@ -6008,6 +6026,7 @@ function App() {
                                                   ...item.feature,
                                                   precipitation: prec
                                                 });
+                                                setZoomFocusTarget('lot');
                                                 setLotesMenuOpen(false);
                                               }}
                                               style={{
@@ -6166,6 +6185,7 @@ function App() {
                                               properties: { NOMBRELOTE: 'Todos' },
                                               isAll: true
                                             });
+                                            setZoomFocusTarget('lot');
                                             setPalmasMenuOpen(false);
                                           }}
                                           style={{
@@ -6225,6 +6245,7 @@ function App() {
                                                   ...item.feature,
                                                   precipitation: prec
                                                 });
+                                                setZoomFocusTarget('lot');
                                                 setPalmasMenuOpen(false);
                                               }}
                                               style={{
@@ -6491,6 +6512,7 @@ function App() {
                                     ...feature,
                                     precipitation: prec
                                   });
+                                  setZoomFocusTarget('lot');
                                 }
                               });
                             }}
@@ -6647,7 +6669,7 @@ function App() {
                               );
                             })()}
 
-                            {selectedLotCenter && !trackActive && mapFilters.lotes && (
+                            {selectedLotCenter && mapFilters.lotes && (
                               <LeafletCircleMarker
                                 center={selectedLotCenter}
                                 radius={0}
@@ -6663,7 +6685,7 @@ function App() {
                               </LeafletCircleMarker>
                             )}
 
-                            {selectedPalmasLotCenter && !trackActive && mapFilters.palmas && (
+                            {selectedPalmasLotCenter && mapFilters.palmas && (
                               <LeafletCircleMarker
                                 center={selectedPalmasLotCenter}
                                 radius={0}
@@ -6679,7 +6701,7 @@ function App() {
                               </LeafletCircleMarker>
                             )}
 
-                            {mapFilters.lotes && !trackActive && lotCenters.map((lot) => {
+                            {mapFilters.lotes && lotCenters.map((lot) => {
                               const selectedName = selectedLotInfo?.properties?.NOMBRELOTE || selectedLotInfo?.properties?.nombrelote || selectedLotInfo?.properties?.['NOMBRE LOT'] || selectedLotInfo?.properties?.lote || selectedLotInfo?.properties?.LOTE || selectedLotInfo?.properties?.name || selectedLotInfo?.properties?.id || '';
                               const selectedPalmasName = selectedPalmasLotInfo?.properties?.NOMBRELOTE || selectedPalmasLotInfo?.properties?.nombrelote || selectedPalmasLotInfo?.properties?.['NOMBRE LOT'] || selectedPalmasLotInfo?.properties?.lote || selectedPalmasLotInfo?.properties?.LOTE || selectedPalmasLotInfo?.properties?.name || selectedPalmasLotInfo?.properties?.id || '';
                               if ((selectedName && selectedName === lot.name) || (selectedPalmasName && selectedPalmasName === lot.name && mapFilters.palmas)) {
@@ -6773,6 +6795,7 @@ function App() {
                                     <button 
                                       onClick={() => {
                                         setSelectedTrackId(null);
+                                        setZoomFocusTarget('lot');
                                         setPlaybackIndex(0);
                                         setIsPlaying(false);
                                       }}
@@ -7079,6 +7102,7 @@ function App() {
                                         key={jornada.id}
                                         onClick={() => {
                                           setSelectedTrackId(jornada.id);
+                                           setZoomFocusTarget('track');
                                           setPlaybackIndex(0);
                                           setIsPlaying(false);
                                         }}
