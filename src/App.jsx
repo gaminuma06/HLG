@@ -351,14 +351,22 @@ function FitMapBounds({ geojson, triggerReset }) {
   return null;
 }
 
-function FitSelectedLotBounds({ selectedLot, trackActive }) {
+function FitSelectedLotBounds({ selectedLot, selectedPalmasLot, mapFilters, trackActive }) {
   const map = useMap();
   useEffect(() => {
     if (!map) return;
     
-    if (selectedLot && !selectedLot.isAll && !trackActive) {
+    // Si Lotes está activo, controla el zoom. Si no, pero Palmas sí está activo, Palmas controla el zoom.
+    let activeZoomLot = null;
+    if (mapFilters?.lotes) {
+      activeZoomLot = selectedLot;
+    } else if (mapFilters?.palmas) {
+      activeZoomLot = selectedPalmasLot;
+    }
+    
+    if (activeZoomLot && !activeZoomLot.isAll && !trackActive) {
       try {
-        const layer = L.geoJSON(selectedLot);
+        const layer = L.geoJSON(activeZoomLot);
         const bounds = layer.getBounds();
         if (bounds.isValid()) {
           const timer = setTimeout(() => {
@@ -386,7 +394,7 @@ function FitSelectedLotBounds({ selectedLot, trackActive }) {
       if (map.keyboard) map.keyboard.disable();
       if (map.touchZoom) map.touchZoom.disable();
     }
-  }, [selectedLot, map, trackActive]);
+  }, [selectedLot, selectedPalmasLot, mapFilters?.lotes, mapFilters?.palmas, map, trackActive]);
   return null;
 }
 
@@ -792,6 +800,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('pluviometrico');
   const [fincaMaps, setFincaMaps] = useState({});
   const [selectedLotInfo, setSelectedLotInfo] = useState(null);
+  const [selectedPalmasLotInfo, setSelectedPalmasLotInfo] = useState(null);
   const [showPluvZones, setShowPluvZones] = useState(false);
   const [humDisplayMode, setHumDisplayMode] = useState('off'); // 'off', 'moisture', 'fertility'
   const [mapUploadFinca, setMapUploadFinca] = useState('HLG');
@@ -1074,6 +1083,24 @@ function App() {
     }
     return null;
   }, [selectedLotInfo]);
+
+  const selectedPalmasLotCenter = useMemo(() => {
+    if (!selectedPalmasLotInfo) return null;
+    const centroid = getFeatureCentroid(selectedPalmasLotInfo);
+    if (centroid) return centroid;
+    
+    try {
+      const layer = L.geoJSON(selectedPalmasLotInfo);
+      const bounds = layer.getBounds();
+      if (bounds.isValid()) {
+        const center = bounds.getCenter();
+        return [center.lat, center.lng];
+      }
+    } catch (e) {
+      console.error("Error calculating selected palmas lot center:", e);
+    }
+    return null;
+  }, [selectedPalmasLotInfo]);
 
   const lotCenters = useMemo(() => {
     if (!activeMapGeoJSON || !activeMapGeoJSON.features) return [];
@@ -6027,7 +6054,7 @@ function App() {
                           }
 
                           if (filter.key === 'palmas') {
-                            const isPalmasBtnDisabled = !checked || mapFilters.lotes;
+                            const isPalmasBtnDisabled = !checked;
                             return (
                               <div key={filter.key} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', position: 'relative' }}>
                                 <label
@@ -6055,6 +6082,7 @@ function App() {
                                       }));
                                       if (!newVal) {
                                         setPalmasMenuOpen(false);
+                                        setSelectedPalmasLotInfo(null);
                                       }
                                     }}
                                     style={{
@@ -6090,11 +6118,11 @@ function App() {
                                     alignSelf: 'center'
                                   }}
                                   title={
-                                    mapFilters.lotes
-                                      ? "Zoom controlado por Lotes"
-                                      : checked
-                                        ? "Seleccionar Lote para Palmas"
-                                        : "Active 'Palmas' para usar esta opción"
+                                    !checked
+                                      ? "Active 'Palmas' para usar esta opción"
+                                      : mapFilters.lotes
+                                        ? "Seleccionar Lote para Palmas (Zoom controlado por Lotes)"
+                                        : "Seleccionar Lote para Palmas"
                                   }
                                 >
                                   <span style={{
@@ -6127,14 +6155,14 @@ function App() {
                                   }}>
                                     {/* Opción "Todos" al principio del listado */}
                                     {(() => {
-                                      const selectedName = selectedLotInfo?.properties?.NOMBRELOTE || selectedLotInfo?.properties?.nombrelote || selectedLotInfo?.properties?.['NOMBRE LOT'] || selectedLotInfo?.properties?.lote || selectedLotInfo?.properties?.LOTE || selectedLotInfo?.properties?.name || selectedLotInfo?.properties?.id || '';
+                                      const selectedName = selectedPalmasLotInfo?.properties?.NOMBRELOTE || selectedPalmasLotInfo?.properties?.nombrelote || selectedPalmasLotInfo?.properties?.['NOMBRE LOT'] || selectedPalmasLotInfo?.properties?.lote || selectedPalmasLotInfo?.properties?.LOTE || selectedPalmasLotInfo?.properties?.name || selectedPalmasLotInfo?.properties?.id || '';
                                       const isTodosSelected = selectedName === 'Todos';
                                       return (
                                         <button
                                           type="button"
                                           onClick={(e) => {
                                             e.stopPropagation();
-                                            setSelectedLotInfo({
+                                            setSelectedPalmasLotInfo({
                                               properties: { NOMBRELOTE: 'Todos' },
                                               isAll: true
                                             });
@@ -6184,7 +6212,7 @@ function App() {
                                         .filter(item => item.name)
                                         .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
                                         .map((item) => {
-                                          const selectedName = selectedLotInfo?.properties?.NOMBRELOTE || selectedLotInfo?.properties?.nombrelote || selectedLotInfo?.properties?.['NOMBRE LOT'] || selectedLotInfo?.properties?.lote || selectedLotInfo?.properties?.LOTE || selectedLotInfo?.properties?.name || selectedLotInfo?.properties?.id || '';
+                                          const selectedName = selectedPalmasLotInfo?.properties?.NOMBRELOTE || selectedPalmasLotInfo?.properties?.nombrelote || selectedPalmasLotInfo?.properties?.['NOMBRE LOT'] || selectedPalmasLotInfo?.properties?.lote || selectedPalmasLotInfo?.properties?.LOTE || selectedPalmasLotInfo?.properties?.name || selectedPalmasLotInfo?.properties?.id || '';
                                           const isSelected = selectedName === item.name;
                                           return (
                                             <button
@@ -6193,7 +6221,7 @@ function App() {
                                               onClick={(e) => {
                                                 e.stopPropagation();
                                                 const prec = getPrecipitationForFeature(item.feature);
-                                                setSelectedLotInfo({
+                                                setSelectedPalmasLotInfo({
                                                   ...item.feature,
                                                   precipitation: prec
                                                 });
@@ -6604,7 +6632,7 @@ function App() {
                               const lon = pt1.lon + (pt2.lon - pt1.lon) * interpolationFactor;
 
                               const bearing = pt1 && pt2 && index !== nextIndex 
-                                ? calculateBearing(pt1.lat, pt1.lon, pt2.lat, pt2.lon) 
+                                    ? calculateBearing(pt1.lat, pt1.lon, pt2.lat, pt2.lon) 
                                 : 0;
 
                               const arrowIcon = L.divIcon({
@@ -6623,62 +6651,97 @@ function App() {
                               );
                             })()}
 
-                           {selectedLotCenter && !trackActive && (
-                             <LeafletCircleMarker
-                               center={selectedLotCenter}
-                               radius={0}
-                               pathOptions={{ stroke: false, fill: false }}
-                             >
-                               <LeafletTooltip
-                                 permanent={true}
-                                 direction="center"
-                                 className="custom-map-tooltip"
-                               >
-                                 {selectedLotInfo.properties.NOMBRELOTE || selectedLotInfo.properties.nombrelote || selectedLotInfo.properties['NOMBRE LOT'] || selectedLotInfo.properties.lote || selectedLotInfo.properties.LOTE || selectedLotInfo.properties.name || selectedLotInfo.properties.id || ''}
-                               </LeafletTooltip>
-                             </LeafletCircleMarker>
-                           )}
-
-                           {mapFilters.lotes && !trackActive && lotCenters.map((lot) => {
-                             const selectedName = selectedLotInfo?.properties?.NOMBRELOTE || selectedLotInfo?.properties?.nombrelote || selectedLotInfo?.properties?.['NOMBRE LOT'] || selectedLotInfo?.properties?.lote || selectedLotInfo?.properties?.LOTE || selectedLotInfo?.properties?.name || selectedLotInfo?.properties?.id || '';
-                             if (selectedName && selectedName === lot.name) {
-                               return null;
-                             }
-                             return (
-                               <LeafletCircleMarker
-                                 key={`label_${lot.name}_${lot.id}`}
-                                 center={lot.center}
-                                 radius={0}
-                                 pathOptions={{ stroke: false, fill: false }}
-                               >
-                                 <LeafletTooltip
-                                   permanent={true}
-                                   direction="center"
-                                   className="discreet-lote-tooltip"
-                                   interactive={false}
-                                 >
-                                   {lot.name}
-                                 </LeafletTooltip>
-                               </LeafletCircleMarker>
-                             );
-                           })}
-                           
-                            <MapInteractionController active={trackActive} />
-                            <FitSelectedLotBounds selectedLot={selectedLotInfo} trackActive={trackActive} />
-
-                            {(!trackActive || !selectedTrackId) ? (
-                              (!selectedLotInfo || selectedLotInfo.isAll) && (
-                                <FitMapBounds 
-                                  geojson={activeMapGeoJSON} 
-                                  triggerReset={`${trackActive}_${selectedTrackId}_${selectedLotInfo?.isAll ? 'all' : 'none'}`} 
-                                />
-                              )
-                            ) : (
-                              (() => {
-                                const track = getActiveTrack(selectedTrackId, mobileTracks, mobileReadings);
-                                return <FitTrackBounds track={track} />;
-                              })()
+                            {selectedLotCenter && !trackActive && mapFilters.lotes && (
+                              <LeafletCircleMarker
+                                center={selectedLotCenter}
+                                radius={0}
+                                pathOptions={{ stroke: false, fill: false }}
+                              >
+                                <LeafletTooltip
+                                  permanent={true}
+                                  direction="center"
+                                  className="custom-map-tooltip"
+                                >
+                                  {selectedLotInfo.properties.NOMBRELOTE || selectedLotInfo.properties.nombrelote || selectedLotInfo.properties['NOMBRE LOT'] || selectedLotInfo.properties.lote || selectedLotInfo.properties.LOTE || selectedLotInfo.properties.name || selectedLotInfo.properties.id || ''}
+                                </LeafletTooltip>
+                              </LeafletCircleMarker>
                             )}
+
+                            {selectedPalmasLotCenter && !trackActive && mapFilters.palmas && (
+                              <LeafletCircleMarker
+                                center={selectedPalmasLotCenter}
+                                radius={0}
+                                pathOptions={{ stroke: false, fill: false }}
+                              >
+                                <LeafletTooltip
+                                  permanent={true}
+                                  direction="center"
+                                  className="custom-map-tooltip"
+                                >
+                                  {selectedPalmasLotInfo.properties.NOMBRELOTE || selectedPalmasLotInfo.properties.nombrelote || selectedPalmasLotInfo.properties['NOMBRE LOT'] || selectedPalmasLotInfo.properties.lote || selectedPalmasLotInfo.properties.LOTE || selectedPalmasLotInfo.properties.name || selectedPalmasLotInfo.properties.id || ''}
+                                </LeafletTooltip>
+                              </LeafletCircleMarker>
+                            )}
+
+                            {mapFilters.lotes && !trackActive && lotCenters.map((lot) => {
+                              const selectedName = selectedLotInfo?.properties?.NOMBRELOTE || selectedLotInfo?.properties?.nombrelote || selectedLotInfo?.properties?.['NOMBRE LOT'] || selectedLotInfo?.properties?.lote || selectedLotInfo?.properties?.LOTE || selectedLotInfo?.properties?.name || selectedLotInfo?.properties?.id || '';
+                              const selectedPalmasName = selectedPalmasLotInfo?.properties?.NOMBRELOTE || selectedPalmasLotInfo?.properties?.nombrelote || selectedPalmasLotInfo?.properties?.['NOMBRE LOT'] || selectedPalmasLotInfo?.properties?.lote || selectedPalmasLotInfo?.properties?.LOTE || selectedPalmasLotInfo?.properties?.name || selectedPalmasLotInfo?.properties?.id || '';
+                              if ((selectedName && selectedName === lot.name) || (selectedPalmasName && selectedPalmasName === lot.name && mapFilters.palmas)) {
+                                return null;
+                              }
+                              return (
+                                <LeafletCircleMarker
+                                  key={`label_${lot.name}_${lot.id}`}
+                                  center={lot.center}
+                                  radius={0}
+                                  pathOptions={{ stroke: false, fill: false }}
+                                >
+                                  <LeafletTooltip
+                                    permanent={true}
+                                    direction="center"
+                                    className="discreet-lote-tooltip"
+                                    interactive={false}
+                                  >
+                                    {lot.name}
+                                  </LeafletTooltip>
+                                </LeafletCircleMarker>
+                              );
+                            })}
+                            
+                            <MapInteractionController active={trackActive} />
+                            {(() => {
+                              let activeZoomLot = null;
+                              if (mapFilters.lotes) {
+                                activeZoomLot = selectedLotInfo;
+                              } else if (mapFilters.palmas) {
+                                activeZoomLot = selectedPalmasLotInfo;
+                              }
+                              const isZoomLotAllOrNull = !activeZoomLot || activeZoomLot.isAll;
+                              
+                              return (
+                                <>
+                                  <FitSelectedLotBounds 
+                                    selectedLot={selectedLotInfo} 
+                                    selectedPalmasLot={selectedPalmasLotInfo} 
+                                    mapFilters={mapFilters} 
+                                    trackActive={trackActive} 
+                                  />
+                                  {(!trackActive || !selectedTrackId) ? (
+                                    isZoomLotAllOrNull && (
+                                      <FitMapBounds 
+                                        geojson={activeMapGeoJSON} 
+                                        triggerReset={`${trackActive}_${selectedTrackId}_${activeZoomLot?.isAll ? 'all' : 'none'}`} 
+                                      />
+                                    )
+                                  ) : (
+                                    (() => {
+                                      const track = getActiveTrack(selectedTrackId, mobileTracks, mobileReadings);
+                                      return <FitTrackBounds track={track} />;
+                                    })()
+                                  )}
+                                </>
+                              );
+                            })()}
 </MapContainer>
                       </div>
 
