@@ -969,6 +969,29 @@ function App() {
     return null;
   }, [selectedLotInfo]);
 
+  const lotCenters = useMemo(() => {
+    if (!activeMapGeoJSON || !activeMapGeoJSON.features) return [];
+    const centers = [];
+    activeMapGeoJSON.features.forEach((feature, idx) => {
+      try {
+        const layer = L.geoJSON(feature);
+        const bounds = layer.getBounds();
+        if (bounds.isValid()) {
+          const center = bounds.getCenter();
+          const loteName = feature.properties.NOMBRELOTE || feature.properties.nombrelote || feature.properties['NOMBRE LOT'] || feature.properties.lote || feature.properties.LOTE || feature.properties.name || feature.properties.id || '';
+          centers.push({
+            id: feature.id || idx,
+            name: loteName,
+            center: [center.lat, center.lng]
+          });
+        }
+      } catch (e) {
+        // Silently skip if there's any invalid geometry
+      }
+    });
+    return centers;
+  }, [activeMapGeoJSON]);
+
   // Estados para Consulta de Datos Históricos (Modal)
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [historyFinca, setHistoryFinca] = useState('Todas');
@@ -6068,6 +6091,30 @@ function App() {
                                </LeafletTooltip>
                              </LeafletCircleMarker>
                            )}
+
+                           {mapFilters.lotes && !trackActive && lotCenters.map((lot) => {
+                             const selectedName = selectedLotInfo?.properties?.NOMBRELOTE || selectedLotInfo?.properties?.nombrelote || selectedLotInfo?.properties?.['NOMBRE LOT'] || selectedLotInfo?.properties?.lote || selectedLotInfo?.properties?.LOTE || selectedLotInfo?.properties?.name || selectedLotInfo?.properties?.id || '';
+                             if (selectedName && selectedName === lot.name) {
+                               return null;
+                             }
+                             return (
+                               <LeafletCircleMarker
+                                 key={`label_${lot.name}_${lot.id}`}
+                                 center={lot.center}
+                                 radius={0}
+                                 pathOptions={{ stroke: false, fill: false }}
+                               >
+                                 <LeafletTooltip
+                                   permanent={true}
+                                   direction="center"
+                                   className="discreet-lote-tooltip"
+                                   interactive={false}
+                                 >
+                                   {lot.name}
+                                 </LeafletTooltip>
+                               </LeafletCircleMarker>
+                             );
+                           })}
                            
                             <MapInteractionController active={trackActive} />
 
