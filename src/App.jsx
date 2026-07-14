@@ -5754,7 +5754,9 @@ function App() {
                       borderRadius: 'var(--radius-sm)',
                       marginTop: '-0.5rem',
                       marginBottom: '-0.45rem',
-                      opacity: 0.95
+                      opacity: 0.95,
+                      position: 'relative',
+                      zIndex: 1010
                     }}>
                       <span style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255, 255, 255, 0.35)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                         Capas:
@@ -5838,16 +5840,15 @@ function App() {
                                     padding: '0 2px',
                                     color: !checked 
                                       ? 'rgba(255, 255, 255, 0.2)' 
-                                      : palmasMenuOpen 
-                                        ? '#00f2fe' 
-                                        : 'rgba(255, 255, 255, 0.6)',
+                                      : '#00ff66',
+                                    textShadow: checked ? '0 0 6px rgba(0, 255, 102, 0.8)' : 'none',
                                     cursor: checked ? 'pointer' : 'not-allowed',
-                                    fontSize: '0.8rem',
+                                    fontSize: '1.25rem',
                                     lineHeight: 1,
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    transition: 'color 0.2s ease',
+                                    transition: 'all 0.2s ease',
                                     outline: 'none'
                                   }}
                                   title={checked ? "Seleccionar Lote para Palmas" : "Active 'Palmas' para usar esta opción"}
