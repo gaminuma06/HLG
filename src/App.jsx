@@ -362,7 +362,7 @@ function FitSelectedLotBounds({ selectedLot, trackActive }) {
         const bounds = layer.getBounds();
         if (bounds.isValid()) {
           const timer = setTimeout(() => {
-            map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+            map.fitBounds(bounds, { padding: [10, 10], maxZoom: 18 });
             
             // Bloquear zoom e interacción manual del usuario en el lote
             if (map.dragging) map.dragging.disable();
