@@ -6278,29 +6278,25 @@ function App() {
                                 alignItems: 'center',
                                 gap: '0.25rem',
                                 fontSize: '0.72rem',
-                                cursor: 'pointer',
-                                color: checked ? 'var(--accent)' : 'rgba(255, 255, 255, 0.4)',
-                                opacity: checked ? 0.9 : 0.45,
+                                cursor: 'not-allowed',
+                                color: 'rgba(255, 255, 255, 0.25)',
+                                opacity: 0.35,
                                 userSelect: 'none',
                                 transition: 'all 0.2s ease',
                               }}
+                              title="Capa en desarrollo"
                             >
                               <input
                                 type="checkbox"
-                                checked={checked}
-                                onChange={() => {
-                                  setMapFilters(prev => ({
-                                    ...prev,
-                                    [filter.key]: !prev[filter.key]
-                                  }));
-                                }}
+                                checked={false}
+                                disabled={true}
                                 style={{
                                   accentColor: 'var(--accent)',
-                                  cursor: 'pointer',
+                                  cursor: 'not-allowed',
                                   width: '10px',
                                   height: '10px',
                                   margin: 0,
-                                  opacity: checked ? 0.9 : 0.5
+                                  opacity: 0.3
                                 }}
                               />
                               <span>{filter.label}</span>
