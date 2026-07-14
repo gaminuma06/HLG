@@ -351,6 +351,45 @@ function FitMapBounds({ geojson, triggerReset }) {
   return null;
 }
 
+function FitSelectedLotBounds({ selectedLot, trackActive }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!map) return;
+    
+    if (selectedLot && !selectedLot.isAll && !trackActive) {
+      try {
+        const layer = L.geoJSON(selectedLot);
+        const bounds = layer.getBounds();
+        if (bounds.isValid()) {
+          const timer = setTimeout(() => {
+            map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+            
+            // Bloquear zoom e interacción manual del usuario en el lote
+            if (map.dragging) map.dragging.disable();
+            if (map.doubleClickZoom) map.doubleClickZoom.disable();
+            if (map.scrollWheelZoom) map.scrollWheelZoom.disable();
+            if (map.boxZoom) map.boxZoom.disable();
+            if (map.keyboard) map.keyboard.disable();
+            if (map.touchZoom) map.touchZoom.disable();
+          }, 50);
+          return () => clearTimeout(timer);
+        }
+      } catch (e) {
+        console.error("Error focusing on selected lot:", e);
+      }
+    } else {
+      // Si se selecciona Todo (o no hay selección), permitir paneo manual pero desactivar zoom manual
+      if (map.dragging) map.dragging.enable();
+      if (map.doubleClickZoom) map.doubleClickZoom.disable();
+      if (map.scrollWheelZoom) map.scrollWheelZoom.disable();
+      if (map.boxZoom) map.boxZoom.disable();
+      if (map.keyboard) map.keyboard.disable();
+      if (map.touchZoom) map.touchZoom.disable();
+    }
+  }, [selectedLot, map, trackActive]);
+  return null;
+}
+
 function MapInteractionController({ active }) {
   const map = useMap();
   useEffect(() => {
@@ -1696,7 +1735,7 @@ function App() {
         const feature = layer.feature;
         if (!feature) return;
         
-        const isSel = checkIfFeatureIsSelected(feature, selectedLotInfo);
+        const isSel = false;
         const pluvVal = feature.properties.PLUVIOMETR || feature.properties.pluviometro || feature.properties.pluv || feature.properties.pluviometro_lote || feature.properties.PLUVIOMETRO || feature.properties.Pluviometro;
         const normalizedPluv = normalizePluviometroName(pluvVal);
         
@@ -6066,7 +6105,7 @@ function App() {
                             key={`${activeFincaKey}_${showPluvZones}_${humDisplayMode}_${trackActive}`}
                             data={activeMapGeoJSON}
                             style={(feature) => {
-                              const isSel = checkIfFeatureIsSelected(feature, selectedLotInfo);
+                              const isSel = false;
                               const pluvVal = feature.properties.PLUVIOMETR || feature.properties.pluviometro || feature.properties.pluv || feature.properties.pluviometro_lote || feature.properties.PLUVIOMETRO || feature.properties.Pluviometro;
                               
                               let fillColor = 'rgba(0, 242, 254, 0.05)';
@@ -6416,9 +6455,15 @@ function App() {
                            })}
                            
                             <MapInteractionController active={trackActive} />
+                            <FitSelectedLotBounds selectedLot={selectedLotInfo} trackActive={trackActive} />
 
-                            {!trackActive || !selectedTrackId ? (
-                              <FitMapBounds geojson={activeMapGeoJSON} triggerReset={`${trackActive}_${selectedTrackId}`} />
+                            {(!trackActive || !selectedTrackId) ? (
+                              (!selectedLotInfo || selectedLotInfo.isAll) && (
+                                <FitMapBounds 
+                                  geojson={activeMapGeoJSON} 
+                                  triggerReset={`${trackActive}_${selectedTrackId}_${selectedLotInfo?.isAll ? 'all' : 'none'}`} 
+                                />
+                              )
                             ) : (
                               (() => {
                                 const track = getActiveTrack(selectedTrackId, mobileTracks, mobileReadings);
@@ -6804,7 +6849,7 @@ function App() {
                               </div>
                             </div>
                           )
-                        ) : selectedLotInfo ? (
+                        ) : (selectedLotInfo && !selectedLotInfo.isAll) ? (
                           (() => {
                             const props = selectedLotInfo.properties || {};
                             const lote = props.NOMBRELOTE || props.nombrelote || props['NOMBRE LOT'] || props.lote || props.LOTE || props.name || props.id || 'N/A';
