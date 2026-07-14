@@ -1487,14 +1487,14 @@ function App() {
         const imgData = ctx.getImageData(0, 0, width, height);
         const data = imgData.data;
 
-        // 2. Crear un canvas temporal para dibujar el fondo blanco y los pixeles convertidos
+        // 2. Crear un canvas temporal para dibujar los pixeles procesados
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = width;
         tempCanvas.height = height;
         const tempCtx = tempCanvas.getContext('2d');
 
         if (tempCtx) {
-          // Crear un nuevo ImageData para el canvas de destino
+          // Crear un nuevo ImageData para el canvas de destino (fondo transparente)
           const newImgData = tempCtx.createImageData(width, height);
           const newData = newImgData.data;
 
@@ -1513,28 +1513,34 @@ function App() {
               continue;
             }
 
+            const pixelIndex = i / 4;
+            const x = pixelIndex % width;
+
             // Detectar si el pixel es gris/blanco/brillante (de bajo contraste en fondo blanco)
             // Para ser gris/blanco, los valores R, G, B deben ser muy cercanos entre sí
             const maxVal = Math.max(r, g, b);
             const minVal = Math.min(r, g, b);
             const diff = maxVal - minVal;
 
-            // Si la diferencia entre canales es pequeña (baja saturación, es un gris/blanco)
-            // y el pixel es bastante brillante (ej: maxVal > 150)
-            if (diff < 30 && maxVal > 150) {
-              // Convertir a un color oscuro (azul oscuro #1e293b) para que sea perfectamente legible en fondo blanco
-              newData[i] = 30;    // R
-              newData[i+1] = 41;  // G
-              newData[i+2] = 59;  // B
-              newData[i+3] = a;   // Mantener la opacidad original
-            } else if (diff < 35 && maxVal > 100) {
-              // Gris medio (como las cuadrículas / gridlines)
-              newData[i] = 203;   // R (#cbd5e1)
-              newData[i+1] = 213; // G
-              newData[i+2] = 225; // B
+            // 1. Si es el título del eje Y (color cian en el extremo izquierdo)
+            const isCyan = (g > 150 && b > 150 && r < 100);
+            if (isCyan && x < 70) {
+              // Convertir a negro sólido
+              newData[i] = 0;
+              newData[i+1] = 0;
+              newData[i+2] = 0;
               newData[i+3] = a;
-            } else {
-              // Es un color saturado (las líneas de datos cian/naranja/rojo), lo dejamos tal cual
+            }
+            // 2. Si es gris/blanco/brillante (textos, leyendas, números de ejes, marcas, bordes)
+            else if (diff < 40 && maxVal > 100) {
+              // Convertir a negro sólido
+              newData[i] = 0;
+              newData[i+1] = 0;
+              newData[i+2] = 0;
+              newData[i+3] = a;
+            }
+            // 3. Es un color saturado (las líneas de datos cian/naranja/rojo), lo dejamos tal cual
+            else {
               newData[i] = r;
               newData[i+1] = g;
               newData[i+2] = b;
@@ -1542,20 +1548,8 @@ function App() {
             }
           }
 
-          // Dibujar el fondo blanco sólido en el canvas temporal
-          tempCtx.fillStyle = '#ffffff';
-          tempCtx.fillRect(0, 0, width, height);
-
-          // Poner los píxeles procesados encima del fondo blanco
-          // Usamos un canvas de ayuda temporal para poner el ImageData y luego dibujarlo con drawImage,
-          // de modo que el alpha blend funcione correctamente sobre el fondo blanco.
-          const helperCanvas = document.createElement('canvas');
-          helperCanvas.width = width;
-          helperCanvas.height = height;
-          const helperCtx = helperCanvas.getContext('2d');
-          helperCtx.putImageData(newImgData, 0, 0);
-
-          tempCtx.drawImage(helperCanvas, 0, 0);
+          // Escribir los píxeles procesados en el canvas temporal (mantiene la transparencia)
+          tempCtx.putImageData(newImgData, 0, 0);
 
           const url = tempCanvas.toDataURL('image/png');
           const cleanName = `${sanitizeFileName(defaultTitle)}.png`;
@@ -1563,7 +1557,7 @@ function App() {
           return;
         }
       } catch (e) {
-        console.error("Error al procesar el canvas para fondo blanco:", e);
+        console.error("Error al procesar el canvas para fondo transparente:", e);
       }
     }
 
