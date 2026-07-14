@@ -1410,6 +1410,26 @@
   display: none !important;
 }
 
+/* Estilo discreto y pequeño para mostrar todas las etiquetas de los lotes permanentemente */
+.discreet-lote-tooltip {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: rgba(255, 255, 255, 0.42) !important;
+  font-family: var(--font-sans) !important;
+  font-size: 0.42rem !important;
+  font-weight: 500 !important;
+  text-shadow: 0 0 1px #000, 0 0 2px #000 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+}
+
+.discreet-lote-tooltip::before {
+  display: none !important;
+}
+
 /* Quitar el recuadro de enfoque blanco en el lote seleccionado */
 path.leaflet-interactive:focus {
   outline: none !important;

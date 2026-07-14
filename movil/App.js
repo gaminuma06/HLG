@@ -56,40 +56,222 @@ export default function App() {
   const [loadingAuth, setLoadingAuth] = useState(false);
   const [currentTab, setCurrentTab] = useState('datos'); // 'datos' | 'sincronizacion'
 
-  // Estados del Formulario
-  const [finca, setFinca] = useState('01'); // '01' | '02' | '03'
-  const [subsector, setSubsector] = useState('');
-  const [lote, setLote] = useState('');
-  const [linea, setLinea] = useState('');
-  const [palma, setPalma] = useState('');
-  const [observacion, setObservacion] = useState('');
-
-  // Estados de "Fijar" (Pinning)
-  const [pinFinca, setPinFinca] = useState(false);
-  const [pinSubsector, setPinSubsector] = useState(false);
-  const [pinLote, setPinLote] = useState(false);
-  const [pinLinea, setPinLinea] = useState(false);
-  const [pinPalma, setPinPalma] = useState(false);
-
-  // Estados de Tracking e Historial
+  // Estados de Formularios Dinámicos
+  const [assignedForms, setAssignedForms] = useState([]);
+  const [selectedForm, setSelectedForm] = useState(null);
+  const [laborActive, setLaborActive] = useState(false);
+  const [formValues, setFormValues] = useState({});
+  const [pinnedFields, setPinnedFields] = useState({});
+  const [userFincas, setUserFincas] = useState(['HLG', 'HSL', 'TUC']); // Fincas asignadas al usuario
+  
+  // Estado de permisos y tracking
   const [isTracking, setIsTracking] = useState(false);
+  const [gpsError, setGpsError] = useState(false);
   const [pendingFormsCount, setPendingFormsCount] = useState(0);
   const [pendingGpsCount, setPendingGpsCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
+
+  // Helper para determinar comportamiento del campo 'finca'
+  const getFincaFieldBehavior = (field, form, fincasList) => {
+    if (field.id !== 'finca') return { visible: true };
+
+    const formFincas = form.fincas || ['Todas'];
+    
+    // Si el formulario tiene una sola finca específica (que no sea "Todas")
+    const hasSingleFormFinca = formFincas.length === 1 && formFincas[0] !== 'Todas';
+    if (hasSingleFormFinca) {
+      return { visible: false, autoValue: formFincas[0] };
+    }
+
+    // Si el operario solo tiene una finca asignada
+    const hasSingleUserFinca = fincasList && fincasList.length === 1;
+    if (hasSingleUserFinca) {
+      return { visible: false, autoValue: fincasList[0] };
+    }
+
+    // Intersección de las fincas del formulario y las del operario
+    let availableOptions = [];
+    if (formFincas.includes('Todas')) {
+      availableOptions = fincasList || ['HLG', 'HSL', 'TUC'];
+    } else {
+      const actualFincas = fincasList || ['HLG', 'HSL', 'TUC'];
+      availableOptions = actualFincas.filter(f => formFincas.includes(f));
+    }
+
+    if (availableOptions.length === 1) {
+      return { visible: false, autoValue: availableOptions[0] };
+    }
+
+    return { visible: true, options: availableOptions };
+  };
+
+  // Sincronizar formularios asignados desde Firebase Cloud
+  const syncAssignedFormsFromServer = async (username) => {
+    try {
+      const userRes = await fetch(FIREBASE_DB_URL + '/registros/usuarios/' + username + '.json');
+      if (!userRes.ok) return;
+      const uData = await userRes.json();
+      if (!uData || uData.status === 'solicitado_eliminar' || uData.status === 'eliminando') {
+        return;
+      }
+      
+      const userArea = uData.area || '';
+      // Soporte multi-área: leer areas_acceso_operario, con fallback a area (legacy)
+      const userAreas = Array.isArray(uData.areas_acceso_operario) && uData.areas_acceso_operario.length > 0
+        ? uData.areas_acceso_operario
+        : (userArea ? [userArea] : []);
+      let forms = [];
+      
+      if (username === 'admin') {
+        const formsRes = await fetch(FIREBASE_DB_URL + '/registros/configuracion_formularios.json');
+        if (formsRes.ok) {
+          const allData = await formsRes.json();
+          if (allData) {
+            Object.values(allData).forEach(areaData => {
+              if (areaData && areaData.formularios) {
+                forms = [...forms, ...areaData.formularios];
+              }
+            });
+          }
+        }
+      } else {
+        // Descargar formularios de cada área asignada
+        const allFormsData = await fetch(FIREBASE_DB_URL + '/registros/configuracion_formularios.json');
+        if (allFormsData.ok) {
+          const allData = await allFormsData.json();
+          if (allData) {
+            userAreas.forEach(area => {
+              if (allData[area] && allData[area].formularios) {
+                forms = [...forms, ...allData[area].formularios];
+              }
+            });
+          }
+        }
+
+        // Filtrar por formularios_permitidos (soporte formato nuevo anidado y formato viejo plano)
+        if (uData.formularios_permitidos) {
+          const permisos = uData.formularios_permitidos;
+          const isOldFormat = Object.values(permisos).some(v => typeof v === 'boolean');
+          if (isOldFormat) {
+            // Formato viejo: { formId: true/false }
+            forms = forms.filter(f => permisos[f.id] !== false);
+          } else {
+            // Formato nuevo: { area: { formId: true/false } }
+            forms = forms.filter(f => {
+              // Buscar en qué área está este formulario
+              for (const area of userAreas) {
+                if (permisos[area] && f.id in permisos[area]) {
+                  return permisos[area][f.id] !== false;
+                }
+              }
+              return true; // Si no está definido, permitir
+            });
+          }
+        }
+      }
+      
+      if (forms.length > 0) {
+        const fincas = uData.fincas || (uData.finca ? [uData.finca] : ['HLG', 'HSL', 'TUC']);
+        await AsyncStorage.setItem('@user_fincas_' + username, JSON.stringify(fincas));
+        setUserFincas(fincas);
+
+        await AsyncStorage.setItem('@assigned_forms_' + username, JSON.stringify(forms));
+        await AsyncStorage.setItem('@user_area_' + username, userArea);
+        setAssignedForms(forms);
+        const activeLabor = await AsyncStorage.getItem('@labor_active_' + username);
+        if (activeLabor !== 'true') {
+          if (forms.length === 1) {
+            setSelectedForm(forms[0]);
+          } else {
+            setSelectedForm(null);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Error al sincronizar formularios de red:", err);
+    }
+  };
+
+  // Polling para actualizar estadísticas locales periódicamente cuando la labor está activa
+  useEffect(() => {
+    let interval = null;
+    if (laborActive) {
+      updateLocalStats();
+      interval = setInterval(() => {
+        updateLocalStats();
+      }, 3000);
+    } else {
+      updateLocalStats();
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [laborActive]);
 
   // Inicialización de Estados al Abrir la App
   useEffect(() => {
     const loadSessionAndStats = async () => {
       try {
         const logged = await AsyncStorage.getItem('@is_logged_in');
-        if (logged === 'true') {
+        const typedUser = await AsyncStorage.getItem('@logged_user');
+        if (logged === 'true' && typedUser) {
           setIsLoggedIn(true);
+          
+          const cachedFincasStr = await AsyncStorage.getItem('@user_fincas_' + typedUser);
+          if (cachedFincasStr) {
+            setUserFincas(JSON.parse(cachedFincasStr));
+          }
+
+          const cachedFormsStr = await AsyncStorage.getItem('@assigned_forms_' + typedUser);
+          if (cachedFormsStr) {
+            const forms = JSON.parse(cachedFormsStr);
+            setAssignedForms(forms);
+            if (forms.length === 1) {
+              setSelectedForm(forms[0]);
+            }
+          }
+          
+          // Cargar estado de labor activa
+          const activeLaborStr = await AsyncStorage.getItem('@labor_active_' + typedUser);
+          if (activeLaborStr === 'true') {
+            setLaborActive(true);
+            const activeFormId = await AsyncStorage.getItem('@active_form_id_' + typedUser);
+            if (activeFormId && cachedFormsStr) {
+              const forms = JSON.parse(cachedFormsStr);
+              const matched = forms.find(f => f.id === activeFormId);
+              if (matched) setSelectedForm(matched);
+            }
+          }
+
+          // Cargar valores fijados (pinned)
+          const cachedPinnedStr = await AsyncStorage.getItem('@pinned_fields_' + typedUser);
+          if (cachedPinnedStr) {
+            setPinnedFields(JSON.parse(cachedPinnedStr));
+          }
+
+          // Cargar formValues guardados
+          const cachedValuesStr = await AsyncStorage.getItem('@form_values_' + typedUser);
+          if (cachedValuesStr) {
+            setFormValues(JSON.parse(cachedValuesStr));
+          }
+
+          // Descargar formularios actualizados de la nube en segundo plano
+          syncAssignedFormsFromServer(typedUser);
         }
         
         // Validar si el servicio de tracking sigue activo
         const trackingActive = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
         setIsTracking(trackingActive);
+
+        // Validar permisos de GPS
+        const { status: fg } = await Location.getForegroundPermissionsAsync();
+        const { status: bg } = await Location.getBackgroundPermissionsAsync();
+        if (fg !== 'granted' || bg !== 'granted') {
+          setGpsError(true);
+        } else {
+          setGpsError(false);
+        }
 
         // Cargar contadores de pendientes
         updateLocalStats();
@@ -100,6 +282,33 @@ export default function App() {
 
     loadSessionAndStats();
   }, []);
+
+  // Sincronizar formValues cuando selectedForm o userFincas cambien
+  useEffect(() => {
+    if (selectedForm) {
+      const isEmpty = Object.keys(formValues).length === 0;
+      if (isEmpty || !laborActive) {
+        const initialValues = { ...formValues };
+        let modified = false;
+        (selectedForm.fields || []).forEach(f => {
+          if (initialValues[f.id] === undefined) {
+            initialValues[f.id] = '';
+            modified = true;
+          }
+          if (f.id === 'finca') {
+            const behavior = getFincaFieldBehavior(f, selectedForm, userFincas);
+            if (behavior.autoValue && initialValues['finca'] !== behavior.autoValue) {
+              initialValues['finca'] = behavior.autoValue;
+              modified = true;
+            }
+          }
+        });
+        if (modified) {
+          setFormValues(initialValues);
+        }
+      }
+    }
+  }, [selectedForm, userFincas]);
 
   // Actualizar estadísticas de registros locales pendientes
   const updateLocalStats = async () => {
@@ -132,54 +341,157 @@ export default function App() {
     }
 
     setLoadingAuth(true);
-    
-    // Lista de usuarios y contraseñas locales (fallback offline)
-    const localUsers = {
-      "admin": "hlg2026#",
-      "sanidad1": "sanidad2026#",
-      "cosecha1": "cosecha2026#"
-    };
+    const typedUser = username.trim();
 
     try {
-      // Intentar validar contra Firebase usando la lista en Realtime Database
-      const response = await fetch(`${FIREBASE_DB_URL}/registros/usuarios.json`);
+      // 1. Obtener información del usuario desde Firebase
+      const response = await fetch(FIREBASE_DB_URL + '/registros/usuarios/' + typedUser + '.json');
       let authenticated = false;
-      const typedUser = username.trim();
-      
+      let userArea = '';
+
       if (response.ok) {
-        const usersList = await response.json();
-        if (usersList && usersList[typedUser]) {
-          const uData = usersList[typedUser];
-          if (uData.password === password) {
-            authenticated = true;
+        const uData = await response.json();
+        if (uData && uData.password === password) {
+          if (uData.status === 'solicitado_eliminar' || uData.status === 'eliminando') {
+            Alert.alert("Acceso Denegado", "Su usuario ha sido inhabilitado para el trabajo de campo por su supervisor.");
+            setLoadingAuth(false);
+            return;
           }
+          authenticated = true;
+          userArea = uData.area || '';
         }
       } else {
-        // Fallback local si la petición falla pero hay respuesta del servidor
+        // Fallback local básico
+        const localUsers = {
+          "admin": "hlg2026#",
+          "sanidad1": "sanidad2026#",
+          "cosecha1": "cosecha2026#"
+        };
         if (localUsers[typedUser] === password) {
           authenticated = true;
+          userArea = typedUser.startsWith('sanidad') ? 'Sanidad' : (typedUser.startsWith('cosecha') ? 'Cosecha' : 'Administración');
         }
       }
 
       if (authenticated) {
+        // 2. Descargar formularios según el rol del usuario
+        let forms = [];
+        try {
+          if (typedUser === 'admin') {
+            // Admin descarga todos los formularios de todas las áreas
+            const formsRes = await fetch(FIREBASE_DB_URL + '/registros/configuracion_formularios.json');
+            if (formsRes.ok) {
+              const allData = await formsRes.json();
+              if (allData) {
+                Object.values(allData).forEach(areaData => {
+                  if (areaData && areaData.formularios) {
+                    forms = [...forms, ...areaData.formularios];
+                  }
+                });
+              }
+            }
+          } else {
+            // Operario descarga formularios de todas sus áreas asignadas
+            const userProfileRes = await fetch(FIREBASE_DB_URL + '/registros/usuarios/' + typedUser + '.json');
+            let uDataSync = null;
+            if (userProfileRes.ok) {
+              uDataSync = await userProfileRes.json();
+            }
+
+            const opAreas = uDataSync && Array.isArray(uDataSync.areas_acceso_operario) && uDataSync.areas_acceso_operario.length > 0
+              ? uDataSync.areas_acceso_operario
+              : (userArea ? [userArea] : []);
+
+            const allFormsRes = await fetch(FIREBASE_DB_URL + '/registros/configuracion_formularios.json');
+            if (allFormsRes.ok) {
+              const allFormsData = await allFormsRes.json();
+              if (allFormsData) {
+                opAreas.forEach(area => {
+                  if (allFormsData[area] && allFormsData[area].formularios) {
+                    forms = [...forms, ...allFormsData[area].formularios];
+                  }
+                });
+              }
+            }
+
+            // Filtrar por formularios_permitidos (nuevo formato anidado o viejo plano)
+            if (uDataSync && uDataSync.formularios_permitidos) {
+              const permisos = uDataSync.formularios_permitidos;
+              const isOldFormat = Object.values(permisos).some(v => typeof v === 'boolean');
+              if (isOldFormat) {
+                forms = forms.filter(f => permisos[f.id] !== false);
+              } else {
+                forms = forms.filter(f => {
+                  for (const area of opAreas) {
+                    if (permisos[area] && f.id in permisos[area]) {
+                      return permisos[area][f.id] !== false;
+                    }
+                  }
+                  return true;
+                });
+              }
+            }
+
+            if (uDataSync) {
+              const fincas = uDataSync.fincas || (uDataSync.finca ? [uDataSync.finca] : ['HLG', 'HSL', 'TUC']);
+              await AsyncStorage.setItem('@user_fincas_' + typedUser, JSON.stringify(fincas));
+              setUserFincas(fincas);
+            }
+          }
+        } catch (fErr) {
+          console.warn("No se pudieron descargar los formularios nuevos de red:", fErr);
+        }
+
+        // Si falló la red o no hay formularios, pero tenemos en caché anterior
+        if (forms.length === 0) {
+          const cached = await AsyncStorage.getItem('@assigned_forms_' + typedUser);
+          if (cached) forms = JSON.parse(cached);
+        }
+
+        // Guardar en AsyncStorage para uso offline
+        await AsyncStorage.setItem('@assigned_forms_' + typedUser, JSON.stringify(forms));
+        await AsyncStorage.setItem('@user_area_' + typedUser, userArea);
+
+        // Actualizar estados
+        setAssignedForms(forms);
+        if (forms.length === 1) {
+          setSelectedForm(forms[0]);
+        } else {
+          setSelectedForm(null);
+        }
+
         setIsLoggedIn(true);
         await AsyncStorage.setItem('@is_logged_in', 'true');
         await AsyncStorage.setItem('@logged_user', typedUser);
-        
-        // Activar rastreo GPS en segundo plano inmediatamente después del login
-        await startLocationTracking();
+
+        // Resetear estados de labor al iniciar sesión
+        setLaborActive(false);
+        await AsyncStorage.setItem('@labor_active_' + typedUser, 'false');
+        await AsyncStorage.setItem('@active_form_id_' + typedUser, '');
+
+        updateLocalStats();
       } else {
         Alert.alert("Acceso denegado", "Usuario o contraseña incorrectos.");
       }
     } catch (err) {
       console.error(err);
-      // Fallback local en caso de error de red completo (offline total)
-      const typedUser = username.trim();
+      // Fallback offline completo
+      const cachedFormsStr = await AsyncStorage.getItem('@assigned_forms_' + typedUser);
+      const localUsers = {
+        "admin": "hlg2026#",
+        "sanidad1": "sanidad2026#",
+        "cosecha1": "cosecha2026#"
+      };
       if (localUsers[typedUser] === password) {
+        let forms = [];
+        if (cachedFormsStr) forms = JSON.parse(cachedFormsStr);
+        setAssignedForms(forms);
+        if (forms.length === 1) setSelectedForm(forms[0]);
+
         setIsLoggedIn(true);
         await AsyncStorage.setItem('@is_logged_in', 'true');
         await AsyncStorage.setItem('@logged_user', typedUser);
-        await startLocationTracking();
+        updateLocalStats();
       } else {
         Alert.alert("Error de conexión", "No se pudo contactar al servidor. Revisa tu internet.");
       }
@@ -188,80 +500,157 @@ export default function App() {
     }
   };
 
-  // Iniciar Rastreo GPS
-  const startLocationTracking = async () => {
+  // Iniciar Labor / Tracking GPS
+  const handleStartLabor = async () => {
     try {
       const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
       if (fgStatus !== 'granted') {
+        setGpsError(true);
         Alert.alert("Permiso denegado", "Se requiere el permiso de ubicación para registrar los datos.");
         return;
       }
 
       const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
       if (bgStatus !== 'granted') {
+        setGpsError(true);
         Alert.alert("Permiso de segundo plano", "Se requiere permitir la ubicación en segundo plano ('Todo el tiempo') para poder rastrear tu recorrido con la pantalla bloqueada.");
         return;
       }
 
-      // Iniciar actualizaciones de segundo plano
+      setGpsError(false);
+
+      // Iniciar actualizaciones de segundo plano con alta precisión
       await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
-        accuracy: Location.Accuracy.Balanced,
-        timeInterval: 15000, // Cada 15 segundos
-        distanceInterval: 8, // Cada 8 metros
+        accuracy: Location.Accuracy.BestForNavigation,
+        timeInterval: 1000, // Cada 1 segundo
+        distanceInterval: 1, // Cada 1 metro
         foregroundService: {
-          notificationTitle: "Rastreo GPS Activo",
-          notificationBody: "Monitoreando coordenadas de recorrido en campo...",
+          notificationTitle: "Labor Activa",
+          notificationBody: selectedForm ? 'Labor activa: ' + selectedForm.titulo : "Registrando datos de la labor en segundo plano...",
           notificationColor: "#00f2fe"
         }
       });
       
+      // Capturar coordenada actual inicial de inmediato
+      try {
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
+        if (loc) {
+          const newPoint = {
+            lat: loc.coords.latitude,
+            lon: loc.coords.longitude,
+            timestamp: loc.timestamp,
+            accuracy: loc.coords.accuracy
+          };
+          const existingTrackStr = await AsyncStorage.getItem('@gps_track');
+          const existingTrack = existingTrackStr ? JSON.parse(existingTrackStr) : [];
+          const updatedTrack = [...existingTrack, newPoint];
+          await AsyncStorage.setItem('@gps_track', JSON.stringify(updatedTrack));
+        }
+      } catch (gpsErr) {
+        console.warn("No se pudo obtener la posición GPS inicial:", gpsErr);
+      }
+      
       setIsTracking(true);
-      console.log("Rastreo GPS en segundo plano activado.");
+      setLaborActive(true);
+      
+      const typedUser = await AsyncStorage.getItem('@logged_user');
+      await AsyncStorage.setItem('@labor_active_' + typedUser, 'true');
+      if (selectedForm) {
+        await AsyncStorage.setItem('@active_form_id_' + typedUser, selectedForm.id);
+      }
+      
+      triggerToast("✓ Labor iniciada");
     } catch (e) {
-      console.error("Error al iniciar el rastreo GPS:", e);
-      Alert.alert("Error GPS", "No se pudo iniciar el servicio de ubicación.");
+      console.error("Error al iniciar la labor:", e);
+      Alert.alert("Error", "No se pudo iniciar el servicio de labor.");
     }
   };
 
-  // Detener Rastreo GPS
-  const stopLocationTracking = async () => {
-    try {
-      const running = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
-      if (running) {
-        await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
-      }
-      setIsTracking(false);
+  // Detener Labor / Tracking GPS
+  const handleStopLabor = () => {
+    Alert.alert(
+      "Finalizar labor",
+      "¿Estás seguro de que deseas finalizar la labor de hoy? Esto guardará la información y limpiará los campos.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        { 
+          text: "Finalizar Labor", 
+          onPress: async () => {
+            try {
+              const running = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+              if (running) {
+                await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+              }
+              setIsTracking(false);
+              setLaborActive(false);
 
-      // Limpiar absolutamente todos los campos del formulario
-      setFinca('01');
-      setSubsector('');
-      setLote('');
-      setLinea('');
-      setPalma('');
-      setObservacion('');
+              const typedUser = await AsyncStorage.getItem('@logged_user');
+              await AsyncStorage.setItem('@labor_active_' + typedUser, 'false');
+              await AsyncStorage.setItem('@active_form_id_' + typedUser, '');
+              
+              // Limpiar campos no fijados
+              const newValues = {};
+              if (selectedForm) {
+                (selectedForm.fields || []).forEach(f => {
+                  if (pinnedFields[f.id]) {
+                    newValues[f.id] = formValues[f.id]; // Mantener valor fijado
+                  } else {
+                    newValues[f.id] = ''; // Vaciar
+                  }
+                });
+              }
+              setFormValues(newValues);
+              await AsyncStorage.setItem('@form_values_' + typedUser, JSON.stringify(newValues));
 
-      // Apagar todos los candados de fijado (pines)
-      setPinFinca(false);
-      setPinSubsector(false);
-      setPinLote(false);
-      setPinLinea(false);
-      setPinPalma(false);
+              Alert.alert("Labor Finalizada", "Se ha cerrado la labor y se han limpiado los campos.");
+            } catch (e) {
+              console.error("Error al finalizar labor:", e);
+            }
+          }, 
+          style: "destructive" 
+        }
+      ]
+    );
+  };
 
-      Alert.alert("Trabajo Finalizado", "El rastreo GPS se ha detenido y se han limpiado todos los campos del formulario.");
-    } catch (e) {
-      console.error("Error al detener el rastreo GPS:", e);
-    }
+  // Manejar cambio en un campo dinámico
+  const handleFieldChange = async (fieldId, value) => {
+    const nextValues = { ...formValues, [fieldId]: value };
+    setFormValues(nextValues);
+    const typedUser = await AsyncStorage.getItem('@logged_user');
+    await AsyncStorage.setItem('@form_values_' + typedUser, JSON.stringify(nextValues));
+  };
+
+  // Alternar el estado de fijar (pin) un campo
+  const togglePinField = async (fieldId) => {
+    const nextPinned = { ...pinnedFields, [fieldId]: !pinnedFields[fieldId] };
+    setPinnedFields(nextPinned);
+    const typedUser = await AsyncStorage.getItem('@logged_user');
+    await AsyncStorage.setItem('@pinned_fields_' + typedUser, JSON.stringify(nextPinned));
   };
 
   // Guardar Formulario Localmente
   const handleSaveForm = async () => {
-    if (!subsector.trim() || !lote.trim() || !linea.trim() || !palma.trim()) {
-      Alert.alert("Campos requeridos", "Por favor completa todos los campos del formulario (excepto observación).");
+    if (!selectedForm) return;
+
+    // Validar requeridos
+    let missingRequired = false;
+    (selectedForm.fields || []).forEach(f => {
+      if (f.required) {
+        const val = formValues[f.id];
+        if (!val || String(val).trim() === '') {
+          missingRequired = true;
+        }
+      }
+    });
+
+    if (missingRequired) {
+      Alert.alert("Campos requeridos", "Por favor completa todos los campos marcados con asterisco (*).");
       return;
     }
 
     try {
-      // Capturar coordenada GPS actual de manera instantánea (última conocida por el dispositivo)
+      // Capturar coordenada GPS actual
       let currentCoords = null;
       try {
         const loc = await Location.getLastKnownPositionAsync();
@@ -276,20 +665,38 @@ export default function App() {
         console.warn("No se pudo obtener la última posición GPS conocida:", gpsErr);
       }
 
-      // Crear nuevo registro de formulario
       const loggedUser = await AsyncStorage.getItem('@logged_user') || 'admin';
+      
+      // Construir registro dinámico plano
       const formRecord = {
-        id: `form-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        finca,
-        subsector: subsector.trim(),
-        lote: lote.trim(),
-        linea: linea.trim(),
-        palma: palma.trim(),
-        observacion: observacion.trim(),
-        gps: currentCoords,
+        id: 'form-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
         usuario: loggedUser,
-        timestamp: Date.now()
+        formulario_id: selectedForm.id,
+        timestamp: Date.now(),
+        gps: currentCoords
       };
+
+      // Inyectar respuestas en el primer nivel del objeto para compatibilidad web
+      (selectedForm.fields || []).forEach(f => {
+        let val = String(formValues[f.id] || '').trim();
+        if (f.id === 'finca' && !val) {
+          const behavior = getFincaFieldBehavior(f, selectedForm, userFincas);
+          if (behavior.autoValue) {
+            val = behavior.autoValue;
+          }
+        }
+        formRecord[f.id] = val;
+      });
+
+      // Asegurar que exista el campo finca
+      if (!formRecord['finca']) {
+        const behavior = getFincaFieldBehavior({ id: 'finca' }, selectedForm, userFincas);
+        if (behavior.autoValue) {
+          formRecord['finca'] = behavior.autoValue;
+        } else {
+          formRecord['finca'] = userFincas.length === 1 ? userFincas[0] : (userFincas.length === 3 ? 'Ambas' : userFincas[0] || 'Ambas');
+        }
+      }
 
       // Cargar cola de formularios locales
       const formsStr = await AsyncStorage.getItem('@forms_data');
@@ -299,33 +706,22 @@ export default function App() {
       // Guardar en AsyncStorage
       await AsyncStorage.setItem('@forms_data', JSON.stringify(forms));
 
-      // Lógica de limpieza basada en "Fijar"
-      if (!pinFinca) setFinca('01');
-      if (!pinSubsector) setSubsector('');
-      if (!pinLote) setLote('');
-      if (!pinLinea) setLinea('');
-      if (!pinPalma) setPalma('');
-      setObservacion(''); // Observación nunca se fija
+      // Limpieza de campos no fijados
+      const nextValues = { ...formValues };
+      (selectedForm.fields || []).forEach(f => {
+        if (!pinnedFields[f.id]) {
+          nextValues[f.id] = '';
+        }
+      });
+      setFormValues(nextValues);
+      await AsyncStorage.setItem('@form_values_' + loggedUser, JSON.stringify(nextValues));
 
-      // Feedback visual inmediato no bloqueante (Toast)
       triggerToast("✓ Registro guardado localmente");
       updateLocalStats();
     } catch (e) {
       console.error("Error al guardar el formulario:", e);
       Alert.alert("Error", "Ocurrió un error al guardar los datos localmente.");
     }
-  };
-
-  // Detener el trabajo por hoy
-  const handleStopDay = () => {
-    Alert.alert(
-      "Finalizar jornada",
-      "¿Estás seguro de que deseas finalizar la jornada de trabajo? Esto detendrá el rastreo GPS.",
-      [
-        { text: "Cancelar", style: "cancel" },
-        { text: "Detener Trabajo", onPress: () => stopLocationTracking(), style: "destructive" }
-      ]
-    );
   };
 
   // Sincronizar todos los datos acumulados con Firebase Cloud
@@ -337,14 +733,15 @@ export default function App() {
 
     setSyncing(true);
     try {
+      const loggedUser = await AsyncStorage.getItem('@logged_user') || 'admin';
+
       // 1. Sincronizar Formularios de Campo
       const formsStr = await AsyncStorage.getItem('@forms_data');
       const forms = formsStr ? JSON.parse(formsStr) : [];
 
       if (forms.length > 0) {
-        // Enviar en lote individualmente o agrupado
         for (const item of forms) {
-          await fetch(`${FIREBASE_DB_URL}/lecturas_campo/${item.id}.json`, {
+          await fetch(FIREBASE_DB_URL + '/registros/lecturas_campo/' + item.id + '.json', {
             method: 'PUT',
             body: JSON.stringify(item)
           });
@@ -356,15 +753,16 @@ export default function App() {
       const track = trackStr ? JSON.parse(trackStr) : [];
 
       if (track.length > 0) {
-        const loggedUser = await AsyncStorage.getItem('@logged_user') || 'admin';
-        // Para no saturar con miles de requests, subimos el recorrido completo bajo un ID único por jornada
-        const trackId = `track-${Date.now()}`;
-        await fetch(`${FIREBASE_DB_URL}/campo_recorridos/${trackId}.json`, {
+        const trackId = 'track-' + Date.now();
+        const trackFinca = userFincas.length === 1 ? userFincas[0] : (userFincas.length === 3 ? 'Ambas' : userFincas[0] || 'Ambas');
+        await fetch(FIREBASE_DB_URL + '/registros/campo_recorridos/' + trackId + '.json', {
           method: 'PUT',
           body: JSON.stringify({
             id: trackId,
             usuario: loggedUser,
             timestamp: Date.now(),
+            fincas: userFincas,
+            finca: trackFinca,
             recorrido: track
           })
         });
@@ -374,7 +772,7 @@ export default function App() {
       await AsyncStorage.setItem('@forms_data', JSON.stringify([]));
       await AsyncStorage.setItem('@gps_track', JSON.stringify([]));
 
-      Alert.alert("Sincronización Exitosa", "Todos los formularios y recorridos GPS han sido subidos a la nube.");
+      Alert.alert("Sincronización Exitosa", "Toda la información del día ha sido sincronizada con éxito.");
       updateLocalStats();
     } catch (err) {
       console.error("Error al sincronizar con Firebase:", err);
@@ -384,17 +782,28 @@ export default function App() {
     }
   };
 
-  // Cerrar Sesión
+  // Cerrar Sesión (Salir)
   const handleLogout = async () => {
+    if (laborActive) {
+      Alert.alert("Labor activa", "No puedes cerrar sesión mientras la labor esté activa. Finaliza la labor primero.");
+      return;
+    }
     Alert.alert(
       "Cerrar sesión",
-      "¿Deseas cerrar sesión en esta unidad? Esto detendrá el rastreo GPS.",
+      "¿Deseas cerrar sesión en esta unidad?",
       [
         { text: "Cancelar", style: "cancel" },
         { 
           text: "Cerrar Sesión", 
           onPress: async () => {
-            await stopLocationTracking();
+            const running = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+            if (running) {
+              await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+            }
+            setIsTracking(false);
+            setLaborActive(false);
+            setSelectedForm(null);
+            setAssignedForms([]);
             await AsyncStorage.setItem('@is_logged_in', 'false');
             setIsLoggedIn(false);
           }, 
@@ -402,6 +811,13 @@ export default function App() {
         }
       ]
     );
+  };
+
+  // Retornar color del punto de estado GPS
+  const getGpsDotColor = () => {
+    if (gpsError) return '#ff4b4b'; // Rojo: error o sin permisos
+    if (isTracking) return '#00e676'; // Verde: activo
+    return '#ff9100'; // Naranja: inactivo
   };
 
   // --- VISTA DE LOGIN ---
@@ -414,7 +830,7 @@ export default function App() {
         <StatusBar style="light" />
         <View style={styles.authCard}>
           <Text style={styles.authTitle}>GAHLG MÓVIL</Text>
-          <Text style={styles.authSubtitle}>Rastreo GPS y Captura de Palma</Text>
+          <Text style={styles.authSubtitle}>Captura y Gestión de Datos de Campo</Text>
 
           <TextInput 
             style={styles.input}
@@ -461,13 +877,11 @@ export default function App() {
         </View>
       )}
       
-      {/* Cabecera */}
+      {/* Cabecera Fija */}
       <View style={styles.header}>
-        <View>
+        <View style={styles.headerTitleRow}>
+          <View style={[styles.dotIndicator, { backgroundColor: getGpsDotColor() }]} />
           <Text style={styles.headerTitle}>GAHLG Campo</Text>
-          <Text style={[styles.headerSubtitle, { color: isTracking ? '#00e676' : '#ff9100' }]}>
-            {isTracking ? '● GPS Activo en 2º Plano' : '● GPS Inactivo'}
-          </Text>
         </View>
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
           <Text style={styles.logoutBtnText}>Salir</Text>
@@ -478,142 +892,266 @@ export default function App() {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {currentTab === 'datos' ? (
           <View style={styles.tabView}>
-            <Text style={styles.sectionTitle}>Ingreso de Lectura</Text>
             
-            {/* Campo: Finca */}
-            <View style={styles.fieldContainer}>
-              <View style={styles.fieldLabelRow}>
-                <Text style={styles.fieldLabel}>Finca *</Text>
-                <TouchableOpacity 
-                  style={[styles.pinBtn, pinFinca && styles.pinBtnActive]} 
-                  onPress={() => setPinFinca(!pinFinca)}
-                >
-                  <Text style={styles.pinBtnText}>{pinFinca ? '🔒 Fijado' : '🔓 Fijar'}</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.fincaButtonGroup}>
-                {['01', '02', '03'].map(id => (
-                  <TouchableOpacity
-                    key={id}
-                    style={[styles.fincaOption, finca === id && styles.fincaOptionActive]}
-                    onPress={() => setFinca(id)}
+            {/* CASO A: Selector de formularios si hay más de 1 asignado y no hay labor activa */}
+            {assignedForms.length > 1 && !selectedForm && (
+              <View>
+                <Text style={styles.sectionTitle}>Seleccione una labor</Text>
+                {assignedForms.map(form => (
+                  <TouchableOpacity 
+                    key={form.id} 
+                    style={styles.formSelectBtn}
+                    onPress={() => {
+                      setSelectedForm(form);
+                      // Inicializar formValues con campos vacíos
+                      const initialValues = {};
+                      (form.fields || []).forEach(f => {
+                        initialValues[f.id] = '';
+                      });
+                      
+                      // Pre-llenar finca si es automática
+                      const fincaField = (form.fields || []).find(f => f.id === 'finca');
+                      if (fincaField) {
+                        const behavior = getFincaFieldBehavior(fincaField, form, userFincas);
+                        if (behavior.autoValue) {
+                          initialValues['finca'] = behavior.autoValue;
+                        }
+                      }
+                      
+                      setFormValues(initialValues);
+                    }}
                   >
-                    <Text style={[styles.fincaOptionText, finca === id && styles.fincaOptionTextActive]}>
-                      Finca {id}
-                    </Text>
+                    <Text style={styles.formSelectBtnText}>{form.titulo}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
-            </View>
-
-            {/* Campo: Subsector */}
-            <View style={styles.fieldContainer}>
-              <View style={styles.fieldLabelRow}>
-                <Text style={styles.fieldLabel}>Subsector *</Text>
-                <TouchableOpacity 
-                  style={[styles.pinBtn, pinSubsector && styles.pinBtnActive]} 
-                  onPress={() => setPinSubsector(!pinSubsector)}
-                >
-                  <Text style={styles.pinBtnText}>{pinSubsector ? '🔒 Fijado' : '🔓 Fijar'}</Text>
-                </TouchableOpacity>
-              </View>
-              <TextInput
-                style={styles.fieldInput}
-                placeholder="Escribe el subsector"
-                placeholderTextColor="#636b77"
-                value={subsector}
-                onChangeText={setSubsector}
-              />
-            </View>
-
-            {/* Campo: Lote */}
-            <View style={styles.fieldContainer}>
-              <View style={styles.fieldLabelRow}>
-                <Text style={styles.fieldLabel}>Lote *</Text>
-                <TouchableOpacity 
-                  style={[styles.pinBtn, pinLote && styles.pinBtnActive]} 
-                  onPress={() => setPinLote(!pinLote)}
-                >
-                  <Text style={styles.pinBtnText}>{pinLote ? '🔒 Fijado' : '🔓 Fijar'}</Text>
-                </TouchableOpacity>
-              </View>
-              <TextInput
-                style={styles.fieldInput}
-                placeholder="Número de Lote"
-                placeholderTextColor="#636b77"
-                value={lote}
-                onChangeText={setLote}
-                keyboardType="numeric"
-              />
-            </View>
-
-            {/* Campo: Línea */}
-            <View style={styles.fieldContainer}>
-              <View style={styles.fieldLabelRow}>
-                <Text style={styles.fieldLabel}>Línea *</Text>
-                <TouchableOpacity 
-                  style={[styles.pinBtn, pinLinea && styles.pinBtnActive]} 
-                  onPress={() => setPinLinea(!pinLinea)}
-                >
-                  <Text style={styles.pinBtnText}>{pinLinea ? '🔒 Fijado' : '🔓 Fijar'}</Text>
-                </TouchableOpacity>
-              </View>
-              <TextInput
-                style={styles.fieldInput}
-                placeholder="Número de Línea"
-                placeholderTextColor="#636b77"
-                value={linea}
-                onChangeText={setLinea}
-                keyboardType="numeric"
-              />
-            </View>
-
-            {/* Campo: Palma */}
-            <View style={styles.fieldContainer}>
-              <View style={styles.fieldLabelRow}>
-                <Text style={styles.fieldLabel}>Palma *</Text>
-                <TouchableOpacity 
-                  style={[styles.pinBtn, pinPalma && styles.pinBtnActive]} 
-                  onPress={() => setPinPalma(!pinPalma)}
-                >
-                  <Text style={styles.pinBtnText}>{pinPalma ? '🔒 Fijado' : '🔓 Fijar'}</Text>
-                </TouchableOpacity>
-              </View>
-              <TextInput
-                style={styles.fieldInput}
-                placeholder="Número de Palma"
-                placeholderTextColor="#636b77"
-                value={palma}
-                onChangeText={setPalma}
-                keyboardType="numeric"
-              />
-            </View>
-
-            {/* Campo: Observación */}
-            <View style={styles.fieldContainer}>
-              <Text style={styles.fieldLabel}>Observación (Opcional)</Text>
-              <TextInput
-                style={[styles.fieldInput, { height: 80, textAlignVertical: 'top' }]}
-                placeholder="Escribe algún comentario..."
-                placeholderTextColor="#636b77"
-                value={observacion}
-                onChangeText={setObservacion}
-                multiline
-              />
-            </View>
-
-            {/* Acciones del Formulario */}
-            <TouchableOpacity style={styles.submitBtn} onPress={handleSaveForm}>
-              <Text style={styles.submitBtnText}>Enviar Formulario</Text>
-            </TouchableOpacity>
-
-            {isTracking && (
-              <TouchableOpacity style={styles.stopDayBtn} onPress={handleStopDay}>
-                <Text style={styles.stopDayBtnText}>Detener Trabajo por Hoy</Text>
-              </TouchableOpacity>
             )}
+
+            {/* CASO B: Sin formularios asignados (Rastreo por Defecto) */}
+            {assignedForms.length === 0 && (
+              <View style={styles.centerBox}>
+                <Text style={styles.sectionTitle}>Registro de Labor</Text>
+                <Text style={styles.helpText}>Esta cuenta no tiene formularios asignados. Utiliza los botones inferiores para registrar tu labor.</Text>
+                
+                {!laborActive ? (
+                  <TouchableOpacity style={styles.startLaborBtn} onPress={handleStartLabor}>
+                    <Text style={styles.startLaborBtnText}>Iniciar Labor</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity style={styles.stopDayBtn} onPress={handleStopLabor}>
+                    <Text style={styles.stopDayBtnText}>Finalizar Labor</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+
+            {/* CASO C: Formulario seleccionado o asignado por defecto */}
+            {selectedForm && (
+              <View>
+                <View style={{ marginBottom: 20 }}>
+                  <Text style={styles.sectionTitle}>{selectedForm.titulo}</Text>
+                  {/* Botón de volver al selector si tiene más de 1 y la labor no ha iniciado */}
+                  {assignedForms.length > 1 && !laborActive && (
+                    <TouchableOpacity 
+                      style={[styles.pinBtn, { marginTop: 8, alignSelf: 'flex-start' }]} 
+                      onPress={() => setSelectedForm(null)}
+                    >
+                      <Text style={styles.pinBtnText}>← Cambiar Labor</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {/* Si la labor no ha iniciado, solo se muestra el botón de Iniciar Labor */}
+                {!laborActive ? (
+                  <View style={styles.centerBox}>
+                    <Text style={styles.helpText}>Para comenzar a registrar las lecturas en campo, inicia la labor de hoy.</Text>
+                    <TouchableOpacity style={styles.startLaborBtn} onPress={handleStartLabor}>
+                      <Text style={styles.startLaborBtnText}>
+                        {selectedForm.labels?.iniciar || 'Iniciar Labor'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  // Si la labor está activa, se dibuja todo el formulario y sus campos dinámicos
+                  <View>
+                    {(selectedForm.fields || []).map(field => {
+                      const isPinned = !!pinnedFields[field.id];
+                      
+                      const fincaBehavior = getFincaFieldBehavior(field, selectedForm, userFincas);
+                      if (field.id === 'finca' && !fincaBehavior.visible) {
+                        return null; // Ocultar el campo finca de la UI
+                      }
+
+                      const selectOptions = (field.id === 'finca' && fincaBehavior.options)
+                        ? fincaBehavior.options
+                        : (field.options || []);
+                      
+                      return (
+                        <View key={field.id} style={styles.fieldContainer}>
+                          <View style={styles.fieldLabelRow}>
+                            <Text style={styles.fieldLabel}>
+                              {field.label} {field.required ? '*' : ''}
+                            </Text>
+                            {/* Mostrar botón de fijar (candado) únicamente si el campo lo permite en la configuración */}
+                            {field.pinned !== false && (
+                              <TouchableOpacity 
+                                style={[styles.pinBtn, isPinned && styles.pinBtnActive]} 
+                                onPress={() => togglePinField(field.id)}
+                              >
+                                <Text style={styles.pinBtnText}>{isPinned ? '🔒 Fijado' : '🔓 Fijar'}</Text>
+                              </TouchableOpacity>
+                            )}
+                          </View>
+
+                          {/* Tipo: select (Opciones en botones horizontales) */}
+                          {field.type === 'select' ? (
+                            <View style={styles.fincaButtonGroup}>
+                              {selectOptions.map(opt => {
+                                const isActive = formValues[field.id] === opt;
+                                return (
+                                  <TouchableOpacity
+                                    key={opt}
+                                    style={[styles.fincaOption, isActive && styles.fincaOptionActive]}
+                                    onPress={() => handleFieldChange(field.id, opt)}
+                                  >
+                                    <Text style={[styles.fincaOptionText, isActive && styles.fincaOptionTextActive]}>
+                                      {opt}
+                                    </Text>
+                                  </TouchableOpacity>
+                                );
+                              })}
+                            </View>
+                          ) : field.type === 'checkbox' ? (
+                            // Tipo: checkbox (Casilla de verificación / Checklist)
+                            <View style={{ gap: 8, marginVertical: 4 }}>
+                              {(field.options && field.options.length > 0) ? (
+                                // Lista de opciones múltiples
+                                field.options.map(opt => {
+                                  const currentVal = formValues[field.id] || '';
+                                  const selectedOpts = currentVal ? currentVal.split(',').map(s => s.trim()) : [];
+                                  const isChecked = selectedOpts.includes(opt);
+                                  
+                                  return (
+                                    <TouchableOpacity
+                                      key={opt}
+                                      style={{
+                                        flexDirection: 'row',
+                                        alignItems: 'center',
+                                        gap: 10,
+                                        backgroundColor: isChecked ? 'rgba(0, 242, 254, 0.1)' : '#0c0f1a',
+                                        borderWidth: 1,
+                                        borderColor: isChecked ? '#00f2fe' : 'rgba(255,255,255,0.05)',
+                                        borderRadius: 8,
+                                        padding: 12
+                                      }}
+                                      onPress={() => {
+                                        let nextOpts;
+                                        if (isChecked) {
+                                          nextOpts = selectedOpts.filter(o => o !== opt);
+                                        } else {
+                                          nextOpts = [...selectedOpts, opt];
+                                        }
+                                        handleFieldChange(field.id, nextOpts.join(', '));
+                                      }}
+                                    >
+                                      <View style={{
+                                        width: 20,
+                                        height: 20,
+                                        borderRadius: 4,
+                                        borderWidth: 1,
+                                        borderColor: isChecked ? '#00f2fe' : '#a0aec0',
+                                        backgroundColor: isChecked ? '#00f2fe' : 'transparent',
+                                        alignItems: 'center',
+                                        justifyContent: 'center'
+                                      }}>
+                                        {isChecked && (
+                                          <Text style={{ color: '#0c0f1a', fontWeight: 'bold', fontSize: 11 }}>✓</Text>
+                                        )}
+                                      </View>
+                                      <Text style={{ color: '#ffffff', fontSize: 14 }}>{opt}</Text>
+                                    </TouchableOpacity>
+                                  );
+                                })
+                              ) : (
+                                // Casilla única Sí/No
+                                <TouchableOpacity
+                                  style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    gap: 10,
+                                    backgroundColor: formValues[field.id] === 'Sí' ? 'rgba(0, 242, 254, 0.1)' : '#0c0f1a',
+                                    borderWidth: 1,
+                                    borderColor: formValues[field.id] === 'Sí' ? '#00f2fe' : 'rgba(255,255,255,0.05)',
+                                    borderRadius: 8,
+                                    padding: 14
+                                  }}
+                                  onPress={() => handleFieldChange(field.id, formValues[field.id] === 'Sí' ? 'No' : 'Sí')}
+                                >
+                                  <View style={{
+                                    width: 22,
+                                    height: 22,
+                                    borderRadius: 4,
+                                    borderWidth: 1,
+                                    borderColor: formValues[field.id] === 'Sí' ? '#00f2fe' : '#a0aec0',
+                                    backgroundColor: formValues[field.id] === 'Sí' ? '#00f2fe' : 'transparent',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                  }}>
+                                    {formValues[field.id] === 'Sí' && (
+                                      <Text style={{ color: '#0c0f1a', fontWeight: 'bold', fontSize: 13 }}>✓</Text>
+                                    )}
+                                  </View>
+                                  <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '500' }}>
+                                    Marcar/Chulear esta opción
+                                  </Text>
+                                </TouchableOpacity>
+                              )}
+                            </View>
+                          ) : field.type === 'textarea' ? (
+                            // Tipo: textarea (observaciones multilínea)
+                            <TextInput
+                              style={[styles.fieldInput, { height: 80, textAlignVertical: 'top' }]}
+                              placeholder={'Escribe la ' + field.label.toLowerCase() + '...'}
+                              placeholderTextColor="#636b77"
+                              value={formValues[field.id] || ''}
+                              onChangeText={(val) => handleFieldChange(field.id, val)}
+                              multiline
+                            />
+                          ) : (
+                            // Tipo estándar (text / number)
+                            <TextInput
+                              style={styles.fieldInput}
+                              placeholder={field.label}
+                              placeholderTextColor="#636b77"
+                              value={formValues[field.id] || ''}
+                              onChangeText={(val) => handleFieldChange(field.id, val)}
+                              keyboardType={field.type === 'number' ? 'numeric' : 'default'}
+                            />
+                          )}
+                        </View>
+                      );
+                    })}
+
+                    {/* Acciones de guardar e ir al final de la labor */}
+                    {selectedForm.fields && selectedForm.fields.length > 0 && (
+                      <TouchableOpacity style={styles.submitBtn} onPress={handleSaveForm}>
+                        <Text style={styles.submitBtnText}>Enviar Registro</Text>
+                      </TouchableOpacity>
+                    )}
+
+                    <TouchableOpacity style={styles.stopDayBtn} onPress={handleStopLabor}>
+                      <Text style={styles.stopDayBtnText}>
+                        {selectedForm.labels?.finalizar || 'Finalizar Labor'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            )}
+
           </View>
         ) : (
+          /* TAB DE SINCRONIZACIÓN SIMPLIFICADA (Conteo de GPS y botón fijo) */
           <View style={styles.tabView}>
             <Text style={styles.sectionTitle}>Sincronización en la Nube</Text>
             
@@ -621,12 +1159,12 @@ export default function App() {
               <Text style={styles.syncCardTitle}>Datos Pendientes de Subida</Text>
               
               <View style={styles.syncRow}>
-                <Text style={styles.syncLabel}>Lecturas de Formularios:</Text>
-                <Text style={styles.syncValue}>{pendingFormsCount}</Text>
-              </View>
-              <View style={styles.syncRow}>
-                <Text style={styles.syncLabel}>Puntos GPS del Recorrido:</Text>
+                <Text style={styles.syncLabel}>Información del día:</Text>
                 <Text style={styles.syncValue}>{pendingGpsCount}</Text>
+              </View>
+              <View style={[styles.syncRow, { marginTop: 10 }]}>
+                <Text style={styles.syncLabel}>Datos de formulario:</Text>
+                <Text style={styles.syncValue}>{pendingFormsCount}</Text>
               </View>
             </View>
 
@@ -643,13 +1181,13 @@ export default function App() {
             </TouchableOpacity>
 
             <Text style={styles.syncHelp}>
-              Al presionar "Sincronizar", se conectará a Firebase Realtime Database para cargar todas las lecturas de palma y el recorrido GPS guardado en segundo plano de manera masiva.
+              Al presionar "Sincronizar", se conectará a Firebase Realtime Database para cargar toda la información recolectada durante el día.
             </Text>
           </View>
         )}
       </ScrollView>
 
-      {/* Barra de Navegación Inferior (Tabs) */}
+      {/* Barra de Navegación Inferior (Tabs Fijos) */}
       <View style={styles.navigationBar}>
         <TouchableOpacity 
           style={[styles.navTab, currentTab === 'datos' && styles.navTabActive]} 
@@ -749,15 +1287,20 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.06)',
     backgroundColor: '#0c0f1a',
   },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dotIndicator: {
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+  },
   headerTitle: {
     color: '#ffffff',
     fontSize: 20,
     fontWeight: 'bold',
-  },
-  headerSubtitle: {
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 2,
   },
   logoutBtn: {
     backgroundColor: 'rgba(255, 75, 75, 0.1)',
@@ -783,7 +1326,47 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 22,
     fontWeight: '700',
+  },
+  formHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 20,
+  },
+
+  // Botones de Selector de Formulario
+  formSelectBtn: {
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 12,
+    padding: 20,
+    marginVertical: 8,
+    alignItems: 'center',
+  },
+  formSelectBtnText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+
+  // Cajas e Indicaciones
+  centerBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 30,
+    backgroundColor: 'rgba(255,255,255,0.01)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.04)',
+    marginVertical: 10,
+  },
+  helpText: {
+    color: '#cbd5e0',
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    marginBottom: 25,
   },
 
   // Campos de Formulario
@@ -828,7 +1411,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.05)',
   },
 
-  // Finca select button group
+  // finca select button group
   fincaButtonGroup: {
     flexDirection: 'row',
     gap: 10,
@@ -857,6 +1440,24 @@ const styles = StyleSheet.create({
   },
 
   // Botones Acciones
+  startLaborBtn: {
+    backgroundColor: '#00f2fe',
+    borderRadius: 8,
+    paddingVertical: 16,
+    paddingHorizontal: 30,
+    alignItems: 'center',
+    shadowColor: '#00f2fe',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 3,
+    width: '100%',
+  },
+  startLaborBtnText: {
+    color: '#051829',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
   submitBtn: {
     backgroundColor: '#00f2fe',
     borderRadius: 8,

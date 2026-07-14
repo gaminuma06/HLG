@@ -20,6 +20,11 @@ import {
   Settings,
   X,
   BarChart2,
+  Users,
+  Plus,
+  Sliders,
+  ShieldCheck,
+  Edit3,
   LineChart,
   Sun,
   Search,
@@ -28,7 +33,8 @@ import {
   Compass,
   ArrowLeft,
   Play,
-  Pause
+  Pause,
+  GripVertical
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import 'leaflet/dist/leaflet.css';
@@ -321,27 +327,129 @@ const getLoteUniqueKey = (properties, index) => {
 };
 
 const MONTH_NAMES_LONG = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
-function FitMapBounds({ geojson, triggerReset }) {
+function MapViewportController({ 
+  selectedLot, 
+  selectedPalmasLot, 
+  mapFilters, 
+  trackActive, 
+  selectedTrackId, 
+  mobileTracks, 
+  mobileReadings,
+  zoomFocusTarget,
+  geojson,
+  triggerReset
+}) {
   const map = useMap();
+  
   useEffect(() => {
-    if (geojson && map) {
-      // Retraso para esperar que el DOM se organice e invalidar tamaño de mapa
-      const timer = setTimeout(() => {
-        try {
-          map.invalidateSize();
-          const layer = L.geoJSON(geojson);
-          const bounds = layer.getBounds();
-          if (bounds.isValid()) {
-            // Ajustamos con padding mínimo para acercar el zoom lo máximo posible
-            map.fitBounds(bounds, { padding: [5, 5] });
+    if (!map) return;
+    
+    // 1. Priorizar zoom al track si el foco de zoom es para el track
+    if (zoomFocusTarget === 'track' && trackActive && selectedTrackId) {
+      const track = mobileTracks.find(t => t.id === selectedTrackId);
+      if (track && track.recorrido && track.recorrido.length > 0) {
+        const timer = setTimeout(() => {
+          try {
+            map.invalidateSize();
+            const positions = track.recorrido.map(p => [p.lat, p.lon]);
+            const bounds = L.latLngBounds(positions);
+            if (bounds.isValid()) {
+              const eastWestSpan = Math.abs(bounds.getEast() - bounds.getWest());
+              const northSouthSpan = Math.abs(bounds.getNorth() - bounds.getSouth());
+              if (eastWestSpan < 0.0008 && northSouthSpan < 0.0008) {
+                map.setView(bounds.getCenter(), 15);
+              } else {
+                map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15.5 });
+              }
+            }
+          } catch (e) {
+            console.error("Error al enfocar el mapa en el recorrido GPS:", e);
           }
-        } catch (e) {
-          console.error("Error al enfocar el mapa en los límites del GeoJSON:", e);
-        }
-      }, 150);
-      return () => clearTimeout(timer);
+        }, 150);
+        return () => clearTimeout(timer);
+      }
+      return;
     }
-  }, [geojson, map, triggerReset]);
+    
+    // 2. Determinar lote seleccionado activo según prioridad (Lotes > Palmas)
+    let activeZoomLot = null;
+    if (mapFilters?.lotes) {
+      activeZoomLot = selectedLot;
+    } else if (mapFilters?.palmas) {
+      activeZoomLot = selectedPalmasLot;
+    }
+    
+    // 3. Zoom a un lote individual específico (y bloquear interacción)
+    if (activeZoomLot && !activeZoomLot.isAll && zoomFocusTarget === 'lot') {
+      try {
+        const layer = L.geoJSON(activeZoomLot);
+        const bounds = layer.getBounds();
+        if (bounds.isValid()) {
+          const timer = setTimeout(() => {
+            map.fitBounds(bounds, { padding: [10, 10], maxZoom: 18 });
+            
+            // Bloquear interacción del usuario en el lote
+            if (map.dragging) map.dragging.disable();
+            if (map.doubleClickZoom) map.doubleClickZoom.disable();
+            if (map.scrollWheelZoom) map.scrollWheelZoom.disable();
+            if (map.boxZoom) map.boxZoom.disable();
+            if (map.keyboard) map.keyboard.disable();
+            if (map.touchZoom) map.touchZoom.disable();
+          }, 50);
+          return () => clearTimeout(timer);
+        }
+      } catch (e) {
+        console.error("Error enfocando el lote seleccionado:", e);
+      }
+    } else {
+      // 4. Zoom al mapa completo de la Finca (Todos o ningún lote seleccionado)
+      if (geojson) {
+        const timer = setTimeout(() => {
+          try {
+            map.invalidateSize();
+            const layer = L.geoJSON(geojson);
+            const bounds = layer.getBounds();
+            if (bounds.isValid()) {
+              map.fitBounds(bounds, { padding: [5, 5] });
+            }
+            
+            // Si trackActive es verdadero, permitir todas las interacciones de zoom manual, etc.
+            // Si trackActive es falso, permitir arrastre pero bloquear zoom manual
+            if (trackActive) {
+              if (map.dragging) map.dragging.enable();
+              if (map.doubleClickZoom) map.doubleClickZoom.enable();
+              if (map.scrollWheelZoom) map.scrollWheelZoom.enable();
+              if (map.boxZoom) map.boxZoom.enable();
+              if (map.keyboard) map.keyboard.enable();
+              if (map.touchZoom) map.touchZoom.enable();
+            } else {
+              if (map.dragging) map.dragging.enable();
+              if (map.doubleClickZoom) map.doubleClickZoom.disable();
+              if (map.scrollWheelZoom) map.scrollWheelZoom.disable();
+              if (map.boxZoom) map.boxZoom.disable();
+              if (map.keyboard) map.keyboard.disable();
+              if (map.touchZoom) map.touchZoom.disable();
+            }
+          } catch (e) {
+            console.error("Error enfocando límites del GeoJSON de la Finca:", e);
+          }
+        }, 150);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [
+    selectedLot, 
+    selectedPalmasLot, 
+    mapFilters?.lotes, 
+    mapFilters?.palmas, 
+    map, 
+    trackActive, 
+    selectedTrackId, 
+    zoomFocusTarget, 
+    geojson,
+    triggerReset
+  ]);
+  
   return null;
 }
 
@@ -474,36 +582,7 @@ function getActiveTrack(selectedTrackId, mobileTracks, mobileReadings) {
   };
 }
 
-function FitTrackBounds({ track }) {
-  const map = useMap();
-  useEffect(() => {
-    if (track && track.recorrido && track.recorrido.length > 0 && map) {
-      const timer = setTimeout(() => {
-        try {
-          map.invalidateSize();
-          const positions = track.recorrido.map(p => [p.lat, p.lon]);
-          const bounds = L.latLngBounds(positions);
-          if (bounds.isValid()) {
-            const eastWestSpan = Math.abs(bounds.getEast() - bounds.getWest());
-            const northSouthSpan = Math.abs(bounds.getNorth() - bounds.getSouth());
-            if (eastWestSpan < 0.0008 && northSouthSpan < 0.0008) {
-              // Si el recorrido tiene muy poca extensión (ej: un solo punto o estacionario),
-              // centramos el mapa en el recorrido y fijamos un zoom moderado (15) para no ir al infinito
-              map.setView(bounds.getCenter(), 15);
-            } else {
-              // Zoom adaptativo ajustado al recorrido completo
-              map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15.5 });
-            }
-          }
-        } catch (e) {
-          console.error("Error al enfocar el mapa en el recorrido GPS:", e);
-        }
-      }, 150);
-      return () => clearTimeout(timer);
-    }
-  }, [track, map]);
-  return null;
-}
+
 
 function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -747,6 +826,8 @@ function App() {
   const [activeTab, setActiveTab] = useState('pluviometrico');
   const [fincaMaps, setFincaMaps] = useState({});
   const [selectedLotInfo, setSelectedLotInfo] = useState(null);
+  const [selectedPalmasLotInfo, setSelectedPalmasLotInfo] = useState(null);
+  const [zoomFocusTarget, setZoomFocusTarget] = useState('none'); // 'none' | 'lot' | 'track'
   const [showPluvZones, setShowPluvZones] = useState(false);
   const [humDisplayMode, setHumDisplayMode] = useState('off'); // 'off', 'moisture', 'fertility'
   const [mapUploadFinca, setMapUploadFinca] = useState('HLG');
@@ -761,6 +842,164 @@ function App() {
     return sessionStorage.getItem('isAdminLoggedIn') === 'true';
   });
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [loginTarget, setLoginTarget] = useState('settings'); // 'settings' | 'admin'
+  const [adminPanelOpen, setAdminPanelOpen] = useState(false);
+  const [adminActiveTab, setAdminActiveTab] = useState('usuarios'); // 'usuarios' | 'formularios' | 'permisos'
+  const [adminUsers, setAdminUsers] = useState({});
+  const [adminFormularios, setAdminFormularios] = useState({});
+  
+  // Estados para creación de usuario
+  const [newUsername, setNewUsername] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newArea, setNewArea] = useState('Sanidad');
+  
+  // Estados para edición de formularios
+  const [selectedAreaEdit, setSelectedAreaEdit] = useState('Sanidad');
+  const [activeFormIndexEdit, setActiveFormIndexEdit] = useState(null);
+  const [customAreaName, setCustomAreaName] = useState('');
+  const [showCustomAreaInput, setShowCustomAreaInput] = useState(false);
+  const [optionsInputs, setOptionsInputs] = useState({});
+  const [adminToast, setAdminToast] = useState(null); // { message: '', type: 'success' }
+  const [adminRole, setAdminRole] = useState(() => {
+    const role = sessionStorage.getItem('adminRole');
+    if (!role && sessionStorage.getItem('isAdminLoggedIn') === 'true') {
+      return 'admin';
+    }
+    return role || null;
+  });
+  const [adminArea, setAdminArea] = useState(() => sessionStorage.getItem('adminArea') || null);
+  const [loggedAdminUser, setLoggedAdminUser] = useState(() => sessionStorage.getItem('loggedAdminUser') || '');
+  const [adminAreasList, setAdminAreasList] = useState(["Sanidad", "Cosecha", "Riego", "Otros"]);
+  const [currentDashboardArea, setCurrentDashboardArea] = useState('Riego');
+  const [userToDeleteTotal, setUserToDeleteTotal] = useState(null);
+  const [deleteTotalConfirmInput, setDeleteTotalConfirmInput] = useState('');
+  const [editingUserKey, setEditingUserKey] = useState(null);
+  const [editingUserTempName, setEditingUserTempName] = useState('');
+  const [editingUserTempPass, setEditingUserTempPass] = useState('');
+  const [editingUserTempFincas, setEditingUserTempFincas] = useState([]); // fincas editables en modo edición
+  const [draggedFieldIdx, setDraggedFieldIdx] = useState(null);
+  const [permisosModalUser, setPermisosModalUser] = useState(null); // nombre del usuario cuyo modal de permisos está abierto
+  const [permisosTemp, setPermisosTemp] = useState({ fincas: [], areas_acceso: [] }); // estado local temporal del modal
+  const [newCreatedUserFincas, setNewCreatedUserFincas] = useState([]); // fincas seleccionadas para el nuevo operario
+  const [permisosSearchQuery, setPermisosSearchQuery] = useState(''); // buscador en tab Permisos
+  const [newUserRoleLocal, setNewUserRoleLocal] = useState('operario'); // rol seleccionado al crear nuevo usuario (controla vista de checkboxes)
+  const [newCreatedJefeAreas, setNewCreatedJefeAreas] = useState([]); // áreas seleccionadas cuando se crea un jefe
+  const [mapFilters, setMapFilters] = useState({
+    lotes: false,
+    palmas: false,
+    rios: false,
+    canos: false,
+    vias: false,
+    bosque: false,
+    canales: false,
+    pluviometros: false
+  });
+  const [palmasMenuOpen, setPalmasMenuOpen] = useState(false);
+  const [lotesMenuOpen, setLotesMenuOpen] = useState(false);
+
+  const canJefeManageUser = (jefeUname, operarioUinfo) => {
+    if (adminRole === 'admin') return true;
+    if (!jefeUname) return false;
+    const curJefeInfo = adminUsers[jefeUname.toLowerCase()];
+    if (!curJefeInfo) return false;
+    
+    // No puede gestionar administradores u otros jefes
+    if (operarioUinfo.role === 'admin' || operarioUinfo.role === 'jefe') return false;
+
+    // Verificar Área
+    const jefeAreas = curJefeInfo.areas_acceso && curJefeInfo.areas_acceso.length > 0
+      ? curJefeInfo.areas_acceso.map(a => a.toLowerCase())
+      : [curJefeInfo.area || adminArea].filter(Boolean).map(a => a.toLowerCase());
+      
+    const opArea = (operarioUinfo.area || '').toLowerCase();
+    if (!jefeAreas.includes(opArea)) return false;
+
+    // Verificar Finca
+    const jefeFincas = curJefeInfo.fincas || [];
+    if (jefeFincas.length === 0) return true; // Si el jefe no tiene fincas restringidas en su perfil, ve todo
+
+    const opFincas = Array.isArray(operarioUinfo.fincas)
+      ? operarioUinfo.fincas
+      : (operarioUinfo.finca ? [operarioUinfo.finca] : []);
+      
+    if (opFincas.length === 0) return true; // Si el operario no tiene finca aún, lo ve
+
+    return opFincas.some(f => jefeFincas.includes(f));
+  };
+
+  // Mantener newArea sincronizado con las áreas permitidas del jefe/admin
+  useEffect(() => {
+    const curJefeInfo = adminUsers[loggedAdminUser?.toLowerCase()];
+    const availableAreas = adminRole === 'admin'
+      ? adminAreasList
+      : (curJefeInfo?.areas_acceso && curJefeInfo.areas_acceso.length > 0
+          ? curJefeInfo.areas_acceso
+          : [adminArea || curJefeInfo?.area].filter(Boolean));
+
+    if (availableAreas.length > 0 && !availableAreas.includes(newArea)) {
+      setNewArea(availableAreas[0]);
+    }
+  }, [adminRole, loggedAdminUser, adminUsers, adminAreasList]);
+  
+  const getDynamicReadingFields = (reading) => {
+    if (!reading) return { title: 'Lectura de Campo', fields: [] };
+    
+    // Buscar la definición del formulario
+    let matchedForm = null;
+    if (adminFormularios) {
+      for (const area of Object.keys(adminFormularios)) {
+        const forms = adminFormularios[area]?.formularios || [];
+        const found = forms.find(f => f.id === reading.formulario_id);
+        if (found) {
+          matchedForm = found;
+          break;
+        }
+      }
+    }
+    
+    const results = [];
+    if (matchedForm && matchedForm.fields) {
+      matchedForm.fields.forEach(f => {
+        if (reading[f.id] !== undefined) {
+          results.push({ label: f.label, value: reading[f.id] });
+        }
+      });
+    } else {
+      // Fallback a propiedades dinámicas genéricas
+      const systemKeys = ['id', 'usuario', 'formulario_id', 'timestamp', 'gps', 'observacion'];
+      Object.keys(reading).forEach(k => {
+        if (!systemKeys.includes(k) && reading[k] !== undefined && reading[k] !== '') {
+          const label = k.charAt(0).toUpperCase() + k.slice(1).replace(/_/g, ' ');
+          results.push({ label, value: reading[k] });
+        }
+      });
+    }
+    return {
+      title: matchedForm ? matchedForm.titulo : 'Lectura de Campo',
+      fields: results
+    };
+  };
+
+  const handleDropField = (targetIdx) => {
+    if (draggedFieldIdx === null || draggedFieldIdx === targetIdx) return;
+    
+    const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+    const fields = [...(nextForms[activeFormIndexEdit].fields || [])];
+    
+    const [draggedItem] = fields.splice(draggedFieldIdx, 1);
+    fields.splice(targetIdx, 0, draggedItem);
+    
+    nextForms[activeFormIndexEdit].fields = fields;
+    setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
+    setDraggedFieldIdx(null);
+  };
+
+  const showAdminToast = (msg, type = 'success') => {
+    setAdminToast({ message: msg, type });
+    setTimeout(() => {
+      setAdminToast(null);
+    }, 3000);
+  };
   const [loginUser, setLoginUser] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState(null);
@@ -793,19 +1032,135 @@ function App() {
     return PASTEL_COLORS[idx % PASTEL_COLORS.length];
   }, [activePluvs]);
 
+  const getFeatureCentroid = (feature) => {
+    if (!feature || !feature.geometry) return null;
+    const geom = feature.geometry;
+
+    const getRingCentroid = (ring) => {
+      if (!Array.isArray(ring) || ring.length < 3) return null;
+      let area = 0;
+      let cx = 0;
+      let cy = 0;
+      const n = ring.length;
+      
+      for (let i = 0; i < n - 1; i++) {
+        const p1 = ring[i]; // [longitude, latitude]
+        const p2 = ring[i+1];
+        
+        const factor = p1[0] * p2[1] - p2[0] * p1[1];
+        area += factor;
+        cx += (p1[0] + p2[0]) * factor;
+        cy += (p1[1] + p2[1]) * factor;
+      }
+      
+      area = area / 2;
+      if (Math.abs(area) < 1e-12) {
+        // Fallback: simple average
+        let sumX = 0, sumY = 0;
+        ring.forEach(p => {
+          sumX += p[0];
+          sumY += p[1];
+        });
+        return [sumY / n, sumX / n];
+      }
+      
+      cx = cx / (6 * area);
+      cy = cy / (6 * area);
+      
+      return [cy, cx]; // [latitude, longitude]
+    };
+
+    if (geom.type === 'Polygon') {
+      if (geom.coordinates && geom.coordinates[0]) {
+        return getRingCentroid(geom.coordinates[0]);
+      }
+    } else if (geom.type === 'MultiPolygon') {
+      if (geom.coordinates) {
+        let maxArea = -1;
+        let bestCentroid = null;
+        geom.coordinates.forEach(poly => {
+          if (poly && poly[0]) {
+            const centroid = getRingCentroid(poly[0]);
+            if (centroid) {
+              bestCentroid = centroid;
+            }
+          }
+        });
+        return bestCentroid;
+      }
+    }
+    return null;
+  };
+
   const selectedLotCenter = useMemo(() => {
     if (!selectedLotInfo) return null;
+    // Try custom centroid first
+    const centroid = getFeatureCentroid(selectedLotInfo);
+    if (centroid) return centroid;
+    
     try {
       const layer = L.geoJSON(selectedLotInfo);
       const bounds = layer.getBounds();
       if (bounds.isValid()) {
-        return bounds.getCenter();
+        const center = bounds.getCenter();
+        return [center.lat, center.lng];
       }
     } catch (e) {
-      console.error("Error calculating lot center:", e);
+      console.error("Error calculating selected lot center:", e);
     }
     return null;
   }, [selectedLotInfo]);
+
+  const selectedPalmasLotCenter = useMemo(() => {
+    if (!selectedPalmasLotInfo) return null;
+    const centroid = getFeatureCentroid(selectedPalmasLotInfo);
+    if (centroid) return centroid;
+    
+    try {
+      const layer = L.geoJSON(selectedPalmasLotInfo);
+      const bounds = layer.getBounds();
+      if (bounds.isValid()) {
+        const center = bounds.getCenter();
+        return [center.lat, center.lng];
+      }
+    } catch (e) {
+      console.error("Error calculating selected palmas lot center:", e);
+    }
+    return null;
+  }, [selectedPalmasLotInfo]);
+
+  const lotCenters = useMemo(() => {
+    if (!activeMapGeoJSON || !activeMapGeoJSON.features) return [];
+    const centers = [];
+    activeMapGeoJSON.features.forEach((feature, idx) => {
+      // Try custom centroid first
+      let center = getFeatureCentroid(feature);
+      
+      // Fallback to bounds if custom centroid fails
+      if (!center) {
+        try {
+          const layer = L.geoJSON(feature);
+          const bounds = layer.getBounds();
+          if (bounds.isValid()) {
+            const bc = bounds.getCenter();
+            center = [bc.lat, bc.lng];
+          }
+        } catch (e) {
+          // Silently skip if there's any invalid geometry
+        }
+      }
+
+      if (center) {
+        const loteName = feature.properties.NOMBRELOTE || feature.properties.nombrelote || feature.properties['NOMBRE LOT'] || feature.properties.lote || feature.properties.LOTE || feature.properties.name || feature.properties.id || '';
+        centers.push({
+          id: feature.id || idx,
+          name: loteName,
+          center: center
+        });
+      }
+    });
+    return centers;
+  }, [activeMapGeoJSON]);
 
   // Estados para Consulta de Datos Históricos (Modal)
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
@@ -1435,7 +1790,7 @@ function App() {
         const feature = layer.feature;
         if (!feature) return;
         
-        const isSel = checkIfFeatureIsSelected(feature, selectedLotInfo);
+        const isSel = false;
         const pluvVal = feature.properties.PLUVIOMETR || feature.properties.pluviometro || feature.properties.pluv || feature.properties.pluviometro_lote || feature.properties.PLUVIOMETRO || feature.properties.Pluviometro;
         const normalizedPluv = normalizePluviometroName(pluvVal);
         
@@ -1651,6 +2006,42 @@ function App() {
       setMobileReadings(cloudReadings);
     } catch (firebaseReadingsErr) {
       console.warn("Fallo al descargar lecturas de campo:", firebaseReadingsErr);
+    }
+
+    try {
+      const usersRes = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/usuarios.json');
+      if (usersRes.ok) {
+        const uData = await usersRes.json();
+        setAdminUsers(uData || {});
+      }
+    } catch (usersErr) {
+      console.warn("Fallo al descargar usuarios en inicio:", usersErr);
+    }
+
+    try {
+      const areasRes = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/areas.json');
+      if (areasRes.ok) {
+        const aData = await areasRes.json();
+        if (aData) {
+          if (Array.isArray(aData)) {
+            setAdminAreasList(aData.filter(Boolean));
+          } else if (typeof aData === 'object') {
+            setAdminAreasList(Object.values(aData).filter(Boolean));
+          }
+        }
+      }
+    } catch (areasErr) {
+      console.warn("Fallo al descargar areas en inicio:", areasErr);
+    }
+
+    try {
+      const formsRes = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/configuracion_formularios.json');
+      if (formsRes.ok) {
+        const fData = await formsRes.json();
+        setAdminFormularios(fData || {});
+      }
+    } catch (formsErr) {
+      console.warn("Fallo al descargar configuración de formularios en inicio:", formsErr);
     } finally {
       setLoading(false);
       setLoadingSource('');
@@ -1922,24 +2313,102 @@ function App() {
       const expectedUser = fbCreds?.username || 'admin';
       const expectedPassword = fbCreds?.password || 'hlg2026#';
 
+      let authenticated = false;
+      let role = null;
+      let area = null;
+
       if (loginUser === expectedUser && loginPassword === expectedPassword) {
+        authenticated = true;
+        role = 'admin';
+        area = null;
+      } else {
+        // Consultar el perfil del usuario en Firebase para validar rol de jefe
+        try {
+          const userRes = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/usuarios/' + loginUser.trim().toLowerCase() + '.json');
+          if (userRes.ok) {
+            const uData = await userRes.json();
+            if (uData && uData.password === loginPassword && uData.role === 'jefe') {
+              authenticated = true;
+              role = 'jefe';
+              area = uData.area || '';
+            }
+          }
+        } catch (e) {
+          console.warn("Error consultando usuario en Firebase:", e);
+        }
+      }
+
+      // Fallback local básico
+      if (!authenticated) {
+        if (loginUser === 'admin' && loginPassword === 'hlg2026#') {
+          authenticated = true;
+          role = 'admin';
+          area = null;
+        } else if (loginUser === 'jefe_sanidad' && loginPassword === 'sanidad2026#') {
+          authenticated = true;
+          role = 'jefe';
+          area = 'Sanidad';
+        } else if (loginUser === 'jefe_cosecha' && loginPassword === 'cosecha2026#') {
+          authenticated = true;
+          role = 'jefe';
+          area = 'Cosecha';
+        }
+      }
+
+      if (authenticated) {
         setIsAdminLoggedIn(true);
+        setAdminRole(role);
+        setAdminArea(area);
+        setLoggedAdminUser(loginUser.trim().toLowerCase());
+        
         sessionStorage.setItem('isAdminLoggedIn', 'true');
+        sessionStorage.setItem('adminRole', role);
+        sessionStorage.setItem('adminArea', area || '');
+        sessionStorage.setItem('loggedAdminUser', loginUser.trim().toLowerCase());
+
         setShowLoginModal(false);
-        setSettingsOpen(true);
+        if (loginTarget === 'admin') {
+          loadAdminData();
+          setAdminPanelOpen(true);
+        } else {
+          if (role === 'admin') {
+            setSettingsOpen(true);
+          } else {
+            setIsAdminLoggedIn(false);
+            setAdminRole(null);
+            setAdminArea(null);
+            setLoggedAdminUser('');
+            sessionStorage.removeItem('isAdminLoggedIn');
+            sessionStorage.removeItem('adminRole');
+            sessionStorage.removeItem('adminArea');
+            sessionStorage.removeItem('loggedAdminUser');
+            showAdminToast("Acceso Denegado. Solo el Administrador General puede ingresar a la configuración.", "error");
+          }
+        }
         setLoginUser('');
         setLoginPassword('');
       } else {
-        setLoginError("Usuario o contraseña incorrectos.");
+        setLoginError("Usuario o contraseña incorrectos, o no posee privilegios de administración.");
       }
     } catch (err) {
       console.error("Error en login:", err);
       // Fallback local en caso de error de conexión
       if (loginUser === 'admin' && loginPassword === 'hlg2026#') {
         setIsAdminLoggedIn(true);
+        setAdminRole('admin');
+        setAdminArea(null);
+        setLoggedAdminUser('admin');
         sessionStorage.setItem('isAdminLoggedIn', 'true');
+        sessionStorage.setItem('adminRole', 'admin');
+        sessionStorage.setItem('adminArea', '');
+        sessionStorage.setItem('loggedAdminUser', 'admin');
         setShowLoginModal(false);
-        setSettingsOpen(true);
+        if (loginTarget === 'admin') {
+          loadAdminData();
+          setAdminPanelOpen(true);
+        } else {
+          setSettingsOpen(true);
+        }
         setLoginUser('');
         setLoginPassword('');
       } else {
@@ -1953,12 +2422,105 @@ function App() {
   // Abrir panel de configuración (o pedir login si no está autenticado)
   const handleOpenSettings = () => {
     if (isAdminLoggedIn) {
-      setSettingsOpen(true);
+      if (adminRole === 'admin') {
+        setSettingsOpen(true);
+      } else {
+        showAdminToast("Acceso Denegado. Solo el Administrador General puede ingresar a la configuración.", "error");
+      }
     } else {
       setLoginError(null);
       setLoginUser('');
       setLoginPassword('');
+      setLoginTarget('settings');
       setShowLoginModal(true);
+    }
+  };
+
+  // Abrir panel de administración (o pedir login si no está autenticado)
+  const handleOpenAdmin = () => {
+    if (isAdminLoggedIn) {
+      loadAdminData();
+      setAdminPanelOpen(true);
+    } else {
+      setLoginError(null);
+      setLoginUser('');
+      setLoginPassword('');
+      setLoginTarget('admin');
+      setShowLoginModal(true);
+    }
+  };
+
+  // Cargar datos de usuarios, formularios y lista de áreas desde Firebase
+  const loadAdminData = async () => {
+    try {
+      const usersRes = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/usuarios.json');
+      if (usersRes.ok) {
+        const uData = await usersRes.json();
+        setAdminUsers(uData || {});
+      }
+      
+      const areasRes = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/areas.json');
+      if (areasRes.ok) {
+        const aData = await areasRes.json();
+        if (aData) {
+          if (Array.isArray(aData)) {
+            setAdminAreasList(aData.filter(Boolean));
+          } else if (typeof aData === 'object') {
+            setAdminAreasList(Object.values(aData).filter(Boolean));
+          }
+        }
+      }
+
+      const formsRes = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/configuracion_formularios.json');
+      if (formsRes.ok) {
+        const fData = await formsRes.json();
+        setAdminFormularios(fData || {});
+        if (fData) {
+          const keys = Object.keys(fData);
+          if (keys.length > 0) {
+            const userRole = sessionStorage.getItem('adminRole');
+            const userArea = sessionStorage.getItem('adminArea');
+            if (userRole === 'jefe' && userArea) {
+              setSelectedAreaEdit(userArea);
+            } else {
+              setSelectedAreaEdit(keys[0]);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Error cargando configuración administrativa:", err);
+    }
+  };
+
+  // Guardar cambios en Firebase
+  const saveAdminUsers = async (updatedUsers) => {
+    try {
+      const res = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/usuarios.json', {
+        method: 'PUT',
+        body: JSON.stringify(updatedUsers)
+      });
+      if (res.ok) {
+        setAdminUsers(updatedUsers);
+        showAdminToast("Usuarios actualizados con éxito.");
+      }
+    } catch (e) {
+      console.error("Error al guardar usuarios:", e);
+    }
+  };
+
+  const saveAdminFormularios = async (updatedForms) => {
+    try {
+      const res = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/configuracion_formularios.json', {
+        method: 'PUT',
+        body: JSON.stringify(updatedForms)
+      });
+      if (res.ok) {
+        setAdminFormularios(updatedForms);
+        showAdminToast("Formularios actualizados con éxito.");
+      }
+    } catch (e) {
+      console.error("Error al guardar formularios:", e);
     }
   };
 
@@ -1986,10 +2548,12 @@ function App() {
       setHumDisplayMode('off'); // Humedad desactivado
       setSelectedLotInfo(null); // Limpiar lote seleccionado
       setSelectedTrackId(null); // Limpiar track seleccionado
+      setZoomFocusTarget('none');
       setPlaybackIndex(0); // Reiniciar animación
       setIsPlaying(false); // Pausar
     } else {
       setSelectedTrackId(null);
+      setZoomFocusTarget('lot');
       setPlaybackIndex(0);
       setIsPlaying(false);
     }
@@ -3881,15 +4445,123 @@ function App() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-            <span className="glass-panel" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Server size={14} className="text-success" />
-              Nube Firebase: Activa
-            </span>
+            <div style={{ position: 'relative', display: 'inline-block' }}>
+              <select
+                value={currentDashboardArea}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setCurrentDashboardArea(val);
+                  setSelectedTrackId(null);
+                  setPlaybackIndex(0);
+                  setIsPlaying(false);
+                  if (val.toLowerCase() !== 'riego') {
+                    setActiveTab('mapas');
+                  }
+                }}
+                style={{
+                  padding: '0.5rem 2.2rem 0.5rem 1rem',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid var(--border-light)',
+                  color: '#fff',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                  outline: 'none',
+                  transition: 'all 0.2s ease',
+                  appearance: 'none',
+                  minWidth: '160px'
+                }}
+                className="select-control"
+              >
+                {adminAreasList.map((areaOpt, idx) => (
+                  <option key={idx} value={areaOpt} style={{ background: 'var(--bg-card)', color: '#fff' }}>
+                    Área: {areaOpt}
+                  </option>
+                ))}
+              </select>
+              <span style={{
+                position: 'absolute',
+                right: '12px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                pointerEvents: 'none',
+                fontSize: '0.65rem',
+                color: 'var(--accent)'
+              }}>▼</span>
+            </div>
             <span className="glass-panel" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <Database size={14} className={records.length > 0 ? "text-success" : "text-danger"} />
               Total: {records.length > 0 ? `${records.length.toLocaleString('es-ES')} registros` : 'Vacía'}
             </span>
-            <button 
+            {(() => {
+              const apkAvailable = true; // Define si el APK está disponible
+              return (
+                <a 
+                  href={apkAvailable ? `${import.meta.env.BASE_URL}application-f4eec3c3-296a-4e9e-9857-9491f1d71635.apk` : '#'}
+                  download={apkAvailable ? "balance-hidrico-movil.apk" : undefined}
+                  onClick={(e) => {
+                    if (!apkAvailable) e.preventDefault();
+                  }}
+                  className="settings-btn"
+                  title={apkAvailable ? "Descargar App Móvil (Android)" : "Descarga de App no disponible"}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '50%',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid var(--border-light)',
+                    color: apkAvailable ? '#3ddc84' : '#636b77',
+                    cursor: apkAvailable ? 'pointer' : 'not-allowed',
+                    transition: 'all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)',
+                    position: 'relative'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (apkAvailable) {
+                      e.currentTarget.style.transform = 'scale(1.15) rotate(10deg)';
+                      e.currentTarget.style.background = 'rgba(61, 220, 132, 0.15)';
+                      e.currentTarget.style.borderColor = '#3ddc84';
+                      e.currentTarget.style.boxShadow = '0 0 12px rgba(61, 220, 132, 0.4)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'scale(1) rotate(0deg)';
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                    e.currentTarget.style.borderColor = 'var(--border-light)';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                    <path d="M17.523 15.3l1.816 3.146a.5.5 0 1 1-.866.5l-1.836-3.18a10.425 10.425 0 0 1-9.274 0l-1.836 3.18a.5.5 0 1 1-.866-.5L6.477 15.3c-2.918-2.017-4.736-5.267-4.47-8.914a.458.458 0 0 1 .012-.083.5.5 0 0 1 .494-.41h19.866a.5.5 0 0 1 .494.41c.004.027.008.056.012.083.266 3.647-1.552 6.897-4.47 8.914M7 9.5a1 1 0 1 0 0 2 1 1 0 0 0 0-2m10 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2" />
+                  </svg>
+                  {apkAvailable && (
+                    <span style={{
+                      position: 'absolute',
+                      bottom: '2px',
+                      right: '2px',
+                      width: '7px',
+                      height: '7px',
+                      borderRadius: '50%',
+                      background: '#3ddc84',
+                      border: '1px solid var(--bg-app)',
+                      boxShadow: '0 0 4px #3ddc84'
+                    }} />
+                  )}
+                </a>
+              );
+            })()}
+                        <button 
+              className="settings-btn" 
+              onClick={handleOpenAdmin}
+              title="Administración de Usuarios y Formularios"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Users size={20} />
+            </button>
+<button 
               className="settings-btn" 
               onClick={handleOpenSettings}
               title="Configuración y Carga de Lluvias"
@@ -3900,7 +4572,7 @@ function App() {
         </header>
 
         {/* Contenedor de Pestañas y Contenido para eliminar el espacio vacío y permitir fusión tipo carpeta */}
-        <div className="tab-container" style={{ display: 'flex', flexDirection: 'column' }}>
+        <div key={currentDashboardArea} className="tab-container area-transition-active" style={{ display: 'flex', flexDirection: 'column' }}>
           
           {errorMessage && (
             <div style={{
@@ -3924,20 +4596,24 @@ function App() {
           
           {/* Pestañas de navegación */}
           <nav className="tab-navigation">
-            <button 
-              className={`tab-btn ${activeTab === 'pluviometrico' ? 'active' : ''}`}
-              onClick={() => setActiveTab('pluviometrico')}
-            >
-              <CloudRain size={15} />
-              Monitoreo Pluviómetro
-            </button>
-            <button 
-              className={`tab-btn ${activeTab === 'balance' ? 'active' : ''}`}
-              onClick={() => setActiveTab('balance')}
-            >
-              <Layers size={15} />
-              Balance
-            </button>
+            {currentDashboardArea.toLowerCase() === 'riego' && (
+              <>
+                <button 
+                  className={`tab-btn ${activeTab === 'pluviometrico' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('pluviometrico')}
+                >
+                  <CloudRain size={15} />
+                  Monitoreo Pluviómetro
+                </button>
+                <button 
+                  className={`tab-btn ${activeTab === 'balance' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('balance')}
+                >
+                  <Layers size={15} />
+                  Balance
+                </button>
+              </>
+            )}
             <button 
               className={`tab-btn ${activeTab === 'mapas' ? 'active' : ''}`}
               onClick={() => setActiveTab('mapas')}
@@ -4875,8 +5551,8 @@ function App() {
                         </select>
                       </div>
 
-                      {/* Filtro Pluviómetro */}
-                      <div className="filter-group" style={{ minWidth: '160px', margin: 0 }}>
+                      {/* Filtro Pluviómetro — solo para Riego */}
+                      {currentDashboardArea.toLowerCase() === 'riego' && <div className="filter-group" style={{ minWidth: '160px', margin: 0 }}>
                         <label htmlFor="map-pluv-select" style={{ fontSize: '0.75rem', marginBottom: '0.2rem', display: 'flex', alignItems: 'center' }}>
                           <Layers size={11} style={{ marginRight: '4px' }} /> Pluviómetro
                         </label>
@@ -4915,7 +5591,7 @@ function App() {
                             <option key={p} value={p}>{p}</option>
                           ))}
                         </select>
-                      </div>
+                      </div>}
 
                       {/* Filtro Año */}
                       <div className="filter-group" style={{ minWidth: '110px', margin: 0 }}>
@@ -4957,8 +5633,8 @@ function App() {
                         </select>
                       </div>
 
-                      {/* Botón Encender/Apagar Coloreado por Pluviómetro */}
-                      <div className="filter-group" style={{ minWidth: '160px', margin: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                      {/* Botón Pluviometría — solo para Riego */}
+                      {currentDashboardArea.toLowerCase() === 'riego' && <div className="filter-group" style={{ minWidth: '160px', margin: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
                         <label style={{ fontSize: '0.75rem', marginBottom: '0.2rem', opacity: 0.8, display: 'flex', alignItems: 'center' }}>
                           <Palette size={11} style={{ marginRight: '4px' }} /> Pluviometría
                         </label>
@@ -4999,10 +5675,10 @@ function App() {
                           }}></span>
                           {showPluvZones ? 'Desactivar' : 'Activar'}
                         </button>
-                      </div>
+                      </div>}
 
-                      {/* Botón Encendido/Apagado/Fertilización 3 posiciones para Humedad */}
-                      <div className="filter-group" style={{ minWidth: '180px', margin: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                      {/* Botón Humedad/Fertilización — solo para Riego y Fertilización */}
+                      {(currentDashboardArea.toLowerCase() === 'riego' || currentDashboardArea.toLowerCase() === 'fertilización' || currentDashboardArea.toLowerCase() === 'fertilizacion') && <div className="filter-group" style={{ minWidth: '180px', margin: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
                         <label style={{ fontSize: '0.75rem', marginBottom: '0.2rem', opacity: 0.8, display: 'flex', alignItems: 'center' }}>
                           <Layers size={11} style={{ marginRight: '4px' }} /> Humedad / Fertilización
                         </label>
@@ -5062,7 +5738,7 @@ function App() {
                           }}></span>
                           {humDisplayMode !== 'off' ? 'Desactivar' : 'Activar'}
                         </button>
-                      </div>
+                      </div>}
 
                       {/* Filtro Monitoreo GPS */}
                       <div className="filter-group" style={{ minWidth: '150px', margin: 0 }}>
@@ -5162,6 +5838,507 @@ function App() {
                       </button>
                     </div>
 
+                    {/* Filtros de Capas del Mapa */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.6rem',
+                      flexWrap: 'wrap',
+                      padding: '0.35rem 0.6rem',
+                      background: 'rgba(255, 255, 255, 0.015)',
+                      border: '1px solid rgba(255, 255, 255, 0.035)',
+                      borderRadius: 'var(--radius-sm)',
+                      marginTop: '-0.5rem',
+                      marginBottom: '-0.45rem',
+                      opacity: 0.95,
+                      position: 'relative',
+                      zIndex: 1010
+                    }}>
+                      <span style={{ fontSize: '0.68rem', fontWeight: 600, color: 'rgba(255, 255, 255, 0.35)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Capas:
+                      </span>
+                      <div style={{ display: 'flex', gap: '0.8rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                        {[
+                          { key: 'lotes', label: 'Lotes' },
+                          { key: 'palmas', label: 'Palmas' },
+                          { key: 'rios', label: 'Ríos' },
+                          { key: 'canos', label: 'Caños' },
+                          { key: 'vias', label: 'Vías' },
+                          { key: 'bosque', label: 'Bosque' },
+                          { key: 'canales', label: 'Canales' },
+                          { key: 'pluviometros', label: 'Pluviómetros' }
+                        ].map((filter) => {
+                          const checked = mapFilters[filter.key];
+                          
+                          if (filter.key === 'lotes') {
+                            return (
+                              <div key={filter.key} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', position: 'relative' }}>
+                                <label
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.25rem',
+                                    fontSize: '0.72rem',
+                                    cursor: 'pointer',
+                                    color: checked ? 'var(--accent)' : 'rgba(255, 255, 255, 0.4)',
+                                    opacity: checked ? 0.9 : 0.45,
+                                    userSelect: 'none',
+                                    transition: 'all 0.2s ease',
+                                    margin: 0
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => {
+                                      const newVal = !checked;
+                                      setMapFilters(prev => ({
+                                        ...prev,
+                                        lotes: newVal
+                                      }));
+                                      if (!newVal) {
+                                        setLotesMenuOpen(false);
+                                      } else {
+                                        // Si se activa Lotes, desactivar y cerrar menú de Palmas
+                                        setPalmasMenuOpen(false);
+                                      }
+                                    }}
+                                    style={{
+                                      accentColor: 'var(--accent)',
+                                      cursor: 'pointer',
+                                      width: '10px',
+                                      height: '10px',
+                                      margin: 0,
+                                      opacity: checked ? 0.9 : 0.5
+                                    }}
+                                  />
+                                  <span>{filter.label}</span>
+                                </label>
+
+                                <button
+                                  type="button"
+                                  disabled={!checked}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setLotesMenuOpen(!lotesMenuOpen);
+                                  }}
+                                  style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    padding: '0 4px',
+                                    cursor: checked ? 'pointer' : 'not-allowed',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    transition: 'all 0.2s ease',
+                                    outline: 'none',
+                                    height: '14px',
+                                    alignSelf: 'center'
+                                  }}
+                                  title={checked ? "Seleccionar Lote para Lotes" : "Active 'Lotes' para usar esta opción"}
+                                >
+                                  <span style={{
+                                    width: '6.5px',
+                                    height: '6.5px',
+                                    borderRadius: '50%',
+                                    backgroundColor: !checked ? 'rgba(255, 255, 255, 0.2)' : '#00ff66',
+                                    boxShadow: checked ? '0 0 7px rgba(0, 255, 102, 0.9)' : 'none',
+                                    transition: 'all 0.2s ease',
+                                    display: 'inline-block'
+                                  }} />
+                                </button>
+
+                                {checked && lotesMenuOpen && (
+                                  <div style={{
+                                    position: 'absolute',
+                                    top: '100%',
+                                    left: '0',
+                                    zIndex: 10000,
+                                    marginTop: '0.35rem',
+                                    width: '150px',
+                                    maxHeight: '180px',
+                                    overflowY: 'auto',
+                                    background: 'rgba(15, 23, 42, 0.95)',
+                                    backdropFilter: 'blur(8px)',
+                                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                                    borderRadius: 'var(--radius-sm)',
+                                    boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                                    padding: '0.25rem 0'
+                                  }}>
+                                    {/* Opción "Todos" al principio del listado */}
+                                    {(() => {
+                                      const selectedName = selectedLotInfo?.properties?.NOMBRELOTE || selectedLotInfo?.properties?.nombrelote || selectedLotInfo?.properties?.['NOMBRE LOT'] || selectedLotInfo?.properties?.lote || selectedLotInfo?.properties?.LOTE || selectedLotInfo?.properties?.name || selectedLotInfo?.properties?.id || '';
+                                      const isTodosSelected = selectedName === 'Todos';
+                                      return (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedLotInfo({
+                                              properties: { NOMBRELOTE: 'Todos' },
+                                              isAll: true
+                                            });
+                                            setZoomFocusTarget('lot');
+                                            setLotesMenuOpen(false);
+                                          }}
+                                          style={{
+                                            display: 'block',
+                                            width: '100%',
+                                            textAlign: 'left',
+                                            background: isTodosSelected ? 'rgba(0, 242, 254, 0.12)' : 'transparent',
+                                            border: 'none',
+                                            color: isTodosSelected ? '#00f2fe' : 'rgba(255, 255, 255, 0.75)',
+                                            padding: '0.35rem 0.6rem',
+                                            fontSize: '0.72rem',
+                                            fontWeight: '600',
+                                            cursor: 'pointer',
+                                            whiteSpace: 'nowrap',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            transition: 'all 0.15s ease',
+                                            borderBottom: '1px solid rgba(255, 255, 255, 0.04)'
+                                          }}
+                                          onMouseEnter={(e) => {
+                                            if (!isTodosSelected) {
+                                              e.target.style.background = 'rgba(255, 255, 255, 0.05)';
+                                              e.target.style.color = '#fff';
+                                            }
+                                          }}
+                                          onMouseLeave={(e) => {
+                                            if (!isTodosSelected) {
+                                              e.target.style.background = 'transparent';
+                                              e.target.style.color = 'rgba(255, 255, 255, 0.75)';
+                                            }
+                                          }}
+                                        >
+                                          Todos
+                                        </button>
+                                      );
+                                    })()}
+
+                                    {activeMapGeoJSON?.features && activeMapGeoJSON.features.length > 0 ? (
+                                      [...activeMapGeoJSON.features]
+                                        .map((f, fidx) => {
+                                          const name = f.properties.NOMBRELOTE || f.properties.nombrelote || f.properties['NOMBRE LOT'] || f.properties.lote || f.properties.LOTE || f.properties.name || f.properties.id || '';
+                                          return { feature: f, name, id: f.id || fidx };
+                                        })
+                                        .filter(item => item.name)
+                                        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+                                        .map((item) => {
+                                          const selectedName = selectedLotInfo?.properties?.NOMBRELOTE || selectedLotInfo?.properties?.nombrelote || selectedLotInfo?.properties?.['NOMBRE LOT'] || selectedLotInfo?.properties?.lote || selectedLotInfo?.properties?.LOTE || selectedLotInfo?.properties?.name || selectedLotInfo?.properties?.id || '';
+                                          const isSelected = selectedName === item.name;
+                                          return (
+                                            <button
+                                              key={item.id}
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                const prec = getPrecipitationForFeature(item.feature);
+                                                setSelectedLotInfo({
+                                                  ...item.feature,
+                                                  precipitation: prec
+                                                });
+                                                setZoomFocusTarget('lot');
+                                                setLotesMenuOpen(false);
+                                              }}
+                                              style={{
+                                                display: 'block',
+                                                width: '100%',
+                                                textAlign: 'left',
+                                                background: isSelected ? 'rgba(0, 242, 254, 0.12)' : 'transparent',
+                                                border: 'none',
+                                                color: isSelected ? '#00f2fe' : 'rgba(255, 255, 255, 0.75)',
+                                                padding: '0.35rem 0.6rem',
+                                                fontSize: '0.72rem',
+                                                cursor: 'pointer',
+                                                whiteSpace: 'nowrap',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                transition: 'all 0.15s ease'
+                                              }}
+                                              onMouseEnter={(e) => {
+                                                if (!isSelected) {
+                                                  e.target.style.background = 'rgba(255, 255, 255, 0.05)';
+                                                  e.target.style.color = '#fff';
+                                                }
+                                              }}
+                                              onMouseLeave={(e) => {
+                                                if (!isSelected) {
+                                                  e.target.style.background = 'transparent';
+                                                  e.target.style.color = 'rgba(255, 255, 255, 0.75)';
+                                                }
+                                              }}
+                                            >
+                                              {item.name}
+                                            </button>
+                                          );
+                                        })
+                                    ) : (
+                                      <div style={{ padding: '0.4rem 0.6rem', fontSize: '0.7rem', color: 'rgba(255, 255, 255, 0.4)' }}>
+                                        Sin lotes
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          }
+
+                          if (filter.key === 'palmas') {
+                            const isPalmasBtnDisabled = !checked;
+                            return (
+                              <div key={filter.key} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', position: 'relative' }}>
+                                <label
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.25rem',
+                                    fontSize: '0.72rem',
+                                    cursor: 'pointer',
+                                    color: checked ? 'var(--accent)' : 'rgba(255, 255, 255, 0.4)',
+                                    opacity: checked ? 0.9 : 0.45,
+                                    userSelect: 'none',
+                                    transition: 'all 0.2s ease',
+                                    margin: 0
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => {
+                                      const newVal = !checked;
+                                      setMapFilters(prev => ({
+                                        ...prev,
+                                        palmas: newVal
+                                      }));
+                                      if (!newVal) {
+                                        setPalmasMenuOpen(false);
+                                        setSelectedPalmasLotInfo(null);
+                                      }
+                                    }}
+                                    style={{
+                                      accentColor: 'var(--accent)',
+                                      cursor: 'pointer',
+                                      width: '10px',
+                                      height: '10px',
+                                      margin: 0,
+                                      opacity: checked ? 0.9 : 0.5
+                                    }}
+                                  />
+                                  <span>{filter.label}</span>
+                                </label>
+
+                                <button
+                                  type="button"
+                                  disabled={isPalmasBtnDisabled}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPalmasMenuOpen(!palmasMenuOpen);
+                                  }}
+                                  style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    padding: '0 4px',
+                                    cursor: isPalmasBtnDisabled ? 'not-allowed' : 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    transition: 'all 0.2s ease',
+                                    outline: 'none',
+                                    height: '14px',
+                                    alignSelf: 'center'
+                                  }}
+                                  title={
+                                    !checked
+                                      ? "Active 'Palmas' para usar esta opción"
+                                      : mapFilters.lotes
+                                        ? "Seleccionar Lote para Palmas (Zoom controlado por Lotes)"
+                                        : "Seleccionar Lote para Palmas"
+                                  }
+                                >
+                                  <span style={{
+                                    width: '6.5px',
+                                    height: '6.5px',
+                                    borderRadius: '50%',
+                                    backgroundColor: isPalmasBtnDisabled ? 'rgba(255, 255, 255, 0.2)' : '#00ff66',
+                                    boxShadow: !isPalmasBtnDisabled ? '0 0 7px rgba(0, 255, 102, 0.9)' : 'none',
+                                    transition: 'all 0.2s ease',
+                                    display: 'inline-block'
+                                  }} />
+                                </button>
+
+                                {!isPalmasBtnDisabled && palmasMenuOpen && (
+                                  <div style={{
+                                    position: 'absolute',
+                                    top: '100%',
+                                    left: '0',
+                                    zIndex: 10000,
+                                    marginTop: '0.35rem',
+                                    width: '150px',
+                                    maxHeight: '180px',
+                                    overflowY: 'auto',
+                                    background: 'rgba(15, 23, 42, 0.95)',
+                                    backdropFilter: 'blur(8px)',
+                                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                                    borderRadius: 'var(--radius-sm)',
+                                    boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                                    padding: '0.25rem 0'
+                                  }}>
+                                    {/* Opción "Todos" al principio del listado */}
+                                    {(() => {
+                                      const selectedName = selectedPalmasLotInfo?.properties?.NOMBRELOTE || selectedPalmasLotInfo?.properties?.nombrelote || selectedPalmasLotInfo?.properties?.['NOMBRE LOT'] || selectedPalmasLotInfo?.properties?.lote || selectedPalmasLotInfo?.properties?.LOTE || selectedPalmasLotInfo?.properties?.name || selectedPalmasLotInfo?.properties?.id || '';
+                                      const isTodosSelected = selectedName === 'Todos';
+                                      return (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedPalmasLotInfo({
+                                              properties: { NOMBRELOTE: 'Todos' },
+                                              isAll: true
+                                            });
+                                            setZoomFocusTarget('lot');
+                                            setPalmasMenuOpen(false);
+                                          }}
+                                          style={{
+                                            display: 'block',
+                                            width: '100%',
+                                            textAlign: 'left',
+                                            background: isTodosSelected ? 'rgba(0, 242, 254, 0.12)' : 'transparent',
+                                            border: 'none',
+                                            color: isTodosSelected ? '#00f2fe' : 'rgba(255, 255, 255, 0.75)',
+                                            padding: '0.35rem 0.6rem',
+                                            fontSize: '0.72rem',
+                                            fontWeight: '600',
+                                            cursor: 'pointer',
+                                            whiteSpace: 'nowrap',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            transition: 'all 0.15s ease',
+                                            borderBottom: '1px solid rgba(255, 255, 255, 0.04)'
+                                          }}
+                                          onMouseEnter={(e) => {
+                                            if (!isTodosSelected) {
+                                              e.target.style.background = 'rgba(255, 255, 255, 0.05)';
+                                              e.target.style.color = '#fff';
+                                            }
+                                          }}
+                                          onMouseLeave={(e) => {
+                                            if (!isTodosSelected) {
+                                              e.target.style.background = 'transparent';
+                                              e.target.style.color = 'rgba(255, 255, 255, 0.75)';
+                                            }
+                                          }}
+                                        >
+                                          Todos
+                                        </button>
+                                      );
+                                    })()}
+
+                                    {activeMapGeoJSON?.features && activeMapGeoJSON.features.length > 0 ? (
+                                      [...activeMapGeoJSON.features]
+                                        .map((f, fidx) => {
+                                          const name = f.properties.NOMBRELOTE || f.properties.nombrelote || f.properties['NOMBRE LOT'] || f.properties.lote || f.properties.LOTE || f.properties.name || f.properties.id || '';
+                                          return { feature: f, name, id: f.id || fidx };
+                                        })
+                                        .filter(item => item.name)
+                                        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+                                        .map((item) => {
+                                          const selectedName = selectedPalmasLotInfo?.properties?.NOMBRELOTE || selectedPalmasLotInfo?.properties?.nombrelote || selectedPalmasLotInfo?.properties?.['NOMBRE LOT'] || selectedPalmasLotInfo?.properties?.lote || selectedPalmasLotInfo?.properties?.LOTE || selectedPalmasLotInfo?.properties?.name || selectedPalmasLotInfo?.properties?.id || '';
+                                          const isSelected = selectedName === item.name;
+                                          return (
+                                            <button
+                                              key={item.id}
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                const prec = getPrecipitationForFeature(item.feature);
+                                                setSelectedPalmasLotInfo({
+                                                  ...item.feature,
+                                                  precipitation: prec
+                                                });
+                                                setZoomFocusTarget('lot');
+                                                setPalmasMenuOpen(false);
+                                              }}
+                                              style={{
+                                                display: 'block',
+                                                width: '100%',
+                                                textAlign: 'left',
+                                                background: isSelected ? 'rgba(0, 242, 254, 0.12)' : 'transparent',
+                                                border: 'none',
+                                                color: isSelected ? '#00f2fe' : 'rgba(255, 255, 255, 0.75)',
+                                                padding: '0.35rem 0.6rem',
+                                                fontSize: '0.72rem',
+                                                cursor: 'pointer',
+                                                whiteSpace: 'nowrap',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                transition: 'all 0.15s ease'
+                                              }}
+                                              onMouseEnter={(e) => {
+                                                if (!isSelected) {
+                                                  e.target.style.background = 'rgba(255, 255, 255, 0.05)';
+                                                  e.target.style.color = '#fff';
+                                                }
+                                              }}
+                                              onMouseLeave={(e) => {
+                                                if (!isSelected) {
+                                                  e.target.style.background = 'transparent';
+                                                  e.target.style.color = 'rgba(255, 255, 255, 0.75)';
+                                                }
+                                              }}
+                                            >
+                                              {item.name}
+                                            </button>
+                                          );
+                                        })
+                                    ) : (
+                                      <div style={{ padding: '0.4rem 0.6rem', fontSize: '0.7rem', color: 'rgba(255, 255, 255, 0.4)' }}>
+                                        Sin lotes
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <label
+                              key={filter.key}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.25rem',
+                                fontSize: '0.72rem',
+                                cursor: 'not-allowed',
+                                color: 'rgba(255, 255, 255, 0.25)',
+                                opacity: 0.35,
+                                userSelect: 'none',
+                                transition: 'all 0.2s ease',
+                              }}
+                              title="Capa en desarrollo"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={false}
+                                disabled={true}
+                                style={{
+                                  accentColor: 'var(--accent)',
+                                  cursor: 'not-allowed',
+                                  width: '10px',
+                                  height: '10px',
+                                  margin: 0,
+                                  opacity: 0.3
+                                }}
+                              />
+                              <span>{filter.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     {/* Diseño en dos columnas: Mapa a la izquierda, Tarjeta a la derecha */}
                     <div style={{ display: 'grid', gridTemplateColumns: '68fr 32fr', gap: '1.5rem', width: '100%' }}>
                       
@@ -5194,7 +6371,7 @@ function App() {
                             key={`${activeFincaKey}_${showPluvZones}_${humDisplayMode}_${trackActive}`}
                             data={activeMapGeoJSON}
                             style={(feature) => {
-                              const isSel = checkIfFeatureIsSelected(feature, selectedLotInfo);
+                              const isSel = false;
                               const pluvVal = feature.properties.PLUVIOMETR || feature.properties.pluviometro || feature.properties.pluv || feature.properties.pluviometro_lote || feature.properties.PLUVIOMETRO || feature.properties.Pluviometro;
                               
                               let fillColor = 'rgba(0, 242, 254, 0.05)';
@@ -5202,12 +6379,7 @@ function App() {
                               let fillOpacity = isSel ? 0.2 : 0.08;
                               let weight = isSel ? 2.5 : 0.8;
 
-                              if (trackActive) {
-                                fillColor = 'rgba(56, 189, 248, 0.06)';
-                                fillOpacity = 0.06;
-                                borderColor = 'rgba(56, 189, 248, 0.45)';
-                                weight = 1.1;
-                              } else if (showPluvZones) {
+                              if (showPluvZones) {
                                 const pluvColor = getPastelColorForPluviometro(pluvVal);
                                 fillColor = pluvColor;
                                 fillOpacity = isSel ? 0.35 : 0.16;
@@ -5347,6 +6519,7 @@ function App() {
                                     ...feature,
                                     precipitation: prec
                                   });
+                                  setZoomFocusTarget('lot');
                                 }
                               });
                             }}
@@ -5447,10 +6620,20 @@ function App() {
                                   >
                                     <LeafletTooltip permanent={false} direction="top">
                                       <span>
-                                        <strong>Estación: Palma {reading.palma}</strong><br/>
-                                        Lote: {reading.lote} (Lín. {reading.linea})<br/>
-                                        Subsector: {reading.subsector}<br/>
-                                        {reading.observacion ? `Obs: ${reading.observacion}` : ''}
+                                        {(() => {
+                                          const { title, fields } = getDynamicReadingFields(reading);
+                                          return (
+                                            <>
+                                              <strong style={{ color: '#ff9100' }}>{title}</strong><br/>
+                                              {fields.map((f, fIdx) => (
+                                                <React.Fragment key={fIdx}>
+                                                  {f.label}: {f.value}<br/>
+                                                </React.Fragment>
+                                              ))}
+                                              {reading.observacion ? `Obs: ${reading.observacion}` : ''}
+                                            </>
+                                          );
+                                        })()}
                                       </span>
                                     </LeafletTooltip>
                                   </LeafletMarker>
@@ -5474,7 +6657,7 @@ function App() {
                               const lon = pt1.lon + (pt2.lon - pt1.lon) * interpolationFactor;
 
                               const bearing = pt1 && pt2 && index !== nextIndex 
-                                ? calculateBearing(pt1.lat, pt1.lon, pt2.lat, pt2.lon) 
+                                    ? calculateBearing(pt1.lat, pt1.lon, pt2.lat, pt2.lon) 
                                 : 0;
 
                               const arrowIcon = L.divIcon({
@@ -5493,32 +6676,76 @@ function App() {
                               );
                             })()}
 
-                           {selectedLotCenter && !trackActive && (
-                             <LeafletCircleMarker
-                               center={selectedLotCenter}
-                               radius={0}
-                               pathOptions={{ stroke: false, fill: false }}
-                             >
-                               <LeafletTooltip
-                                 permanent={true}
-                                 direction="center"
-                                 className="custom-map-tooltip"
-                               >
-                                 {selectedLotInfo.properties.NOMBRELOTE || selectedLotInfo.properties.nombrelote || selectedLotInfo.properties['NOMBRE LOT'] || selectedLotInfo.properties.lote || selectedLotInfo.properties.LOTE || selectedLotInfo.properties.name || selectedLotInfo.properties.id || ''}
-                               </LeafletTooltip>
-                             </LeafletCircleMarker>
-                           )}
-                           
-                            <MapInteractionController active={trackActive} />
-
-                            {!trackActive || !selectedTrackId ? (
-                              <FitMapBounds geojson={activeMapGeoJSON} triggerReset={`${trackActive}_${selectedTrackId}`} />
-                            ) : (
-                              (() => {
-                                const track = getActiveTrack(selectedTrackId, mobileTracks, mobileReadings);
-                                return <FitTrackBounds track={track} />;
-                              })()
+                            {selectedLotCenter && mapFilters.lotes && (
+                              <LeafletCircleMarker
+                                center={selectedLotCenter}
+                                radius={0}
+                                pathOptions={{ stroke: false, fill: false }}
+                              >
+                                <LeafletTooltip
+                                  permanent={true}
+                                  direction="center"
+                                  className="custom-map-tooltip"
+                                >
+                                  {selectedLotInfo.properties.NOMBRELOTE || selectedLotInfo.properties.nombrelote || selectedLotInfo.properties['NOMBRE LOT'] || selectedLotInfo.properties.lote || selectedLotInfo.properties.LOTE || selectedLotInfo.properties.name || selectedLotInfo.properties.id || ''}
+                                </LeafletTooltip>
+                              </LeafletCircleMarker>
                             )}
+
+                            {selectedPalmasLotCenter && mapFilters.palmas && (
+                              <LeafletCircleMarker
+                                center={selectedPalmasLotCenter}
+                                radius={0}
+                                pathOptions={{ stroke: false, fill: false }}
+                              >
+                                <LeafletTooltip
+                                  permanent={true}
+                                  direction="center"
+                                  className="custom-map-tooltip"
+                                >
+                                  {selectedPalmasLotInfo.properties.NOMBRELOTE || selectedPalmasLotInfo.properties.nombrelote || selectedPalmasLotInfo.properties['NOMBRE LOT'] || selectedPalmasLotInfo.properties.lote || selectedPalmasLotInfo.properties.LOTE || selectedPalmasLotInfo.properties.name || selectedPalmasLotInfo.properties.id || ''}
+                                </LeafletTooltip>
+                              </LeafletCircleMarker>
+                            )}
+
+                            {mapFilters.lotes && lotCenters.map((lot) => {
+                              const selectedName = selectedLotInfo?.properties?.NOMBRELOTE || selectedLotInfo?.properties?.nombrelote || selectedLotInfo?.properties?.['NOMBRE LOT'] || selectedLotInfo?.properties?.lote || selectedLotInfo?.properties?.LOTE || selectedLotInfo?.properties?.name || selectedLotInfo?.properties?.id || '';
+                              const selectedPalmasName = selectedPalmasLotInfo?.properties?.NOMBRELOTE || selectedPalmasLotInfo?.properties?.nombrelote || selectedPalmasLotInfo?.properties?.['NOMBRE LOT'] || selectedPalmasLotInfo?.properties?.lote || selectedPalmasLotInfo?.properties?.LOTE || selectedPalmasLotInfo?.properties?.name || selectedPalmasLotInfo?.properties?.id || '';
+                              if ((selectedName && selectedName === lot.name) || (selectedPalmasName && selectedPalmasName === lot.name && mapFilters.palmas)) {
+                                return null;
+                              }
+                              return (
+                                <LeafletCircleMarker
+                                  key={`label_${lot.name}_${lot.id}`}
+                                  center={lot.center}
+                                  radius={0}
+                                  pathOptions={{ stroke: false, fill: false }}
+                                >
+                                  <LeafletTooltip
+                                    permanent={true}
+                                    direction="center"
+                                    className="discreet-lote-tooltip"
+                                    interactive={false}
+                                  >
+                                    {lot.name}
+                                  </LeafletTooltip>
+                                </LeafletCircleMarker>
+                              );
+                            })}
+                            
+                            <MapInteractionController active={trackActive} />
+                            <MapViewportController
+                              selectedLot={selectedLotInfo}
+                              selectedPalmasLot={selectedPalmasLotInfo}
+                              mapFilters={mapFilters}
+                              trackActive={trackActive}
+                              selectedTrackId={selectedTrackId}
+                              mobileTracks={mobileTracks}
+                              mobileReadings={mobileReadings}
+                              zoomFocusTarget={zoomFocusTarget}
+                              geojson={activeMapGeoJSON}
+                              triggerReset={`${trackActive}_${selectedTrackId}_${(mapFilters.lotes ? selectedLotInfo : selectedPalmasLotInfo)?.isAll ? 'all' : 'none'}`}
+                            />
 </MapContainer>
                       </div>
 
@@ -5554,6 +6781,7 @@ function App() {
                                     <button 
                                       onClick={() => {
                                         setSelectedTrackId(null);
+                                        setZoomFocusTarget('lot');
                                         setPlaybackIndex(0);
                                         setIsPlaying(false);
                                       }}
@@ -5721,18 +6949,31 @@ function App() {
                                                 onMouseEnter={(e) => e.currentTarget.style.borderColor = '#ff9100'}
                                                 onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-light)'}
                                               >
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem' }}>
-                                                  <span style={{ color: '#ff9100', fontWeight: 'bold' }}>Finca {reading.finca} · Lote {reading.lote}</span>
-                                                  <span style={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>Palma {reading.palma} · Lín. {reading.linea}</span>
-                                                </div>
-                                                <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.7)' }}>
-                                                  Subsector: <strong style={{ color: '#fff' }}>{reading.subsector}</strong>
-                                                </div>
-                                                {reading.observacion ? (
-                                                  <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.68rem', color: '#fff', background: 'rgba(255,255,255,0.03)', padding: '2px 5px', borderRadius: '3px', fontStyle: 'italic' }}>
-                                                    Obs: {reading.observacion}
-                                                  </p>
-                                                ) : null}
+                                                {(() => {
+                                                  const { title, fields } = getDynamicReadingFields(reading);
+                                                  return (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                                                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem' }}>
+                                                        <span style={{ color: '#ff9100', fontWeight: 'bold' }}>{title}</span>
+                                                        <span style={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>
+                                                          {new Date(reading.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                        </span>
+                                                      </div>
+                                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '0.2rem' }}>
+                                                        {fields.map((df, dfIdx) => (
+                                                          <div key={dfIdx} style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.7)' }}>
+                                                            {df.label}: <strong style={{ color: '#fff' }}>{df.value}</strong>
+                                                          </div>
+                                                        ))}
+                                                      </div>
+                                                      {reading.observacion ? (
+                                                        <div style={{ fontSize: '0.68rem', color: '#ffab40', fontStyle: 'italic', marginTop: '2px' }}>
+                                                          Obs: {reading.observacion}
+                                                        </div>
+                                                      ) : null}
+                                                    </div>
+                                                  );
+                                                })()}
                                               </div>
                                             );
                                           })}
@@ -5777,8 +7018,22 @@ function App() {
                                   // Generar listado unificado de jornadas de operarios (tracks y lecturas)
                                   const list = [];
                                   
+                                  const filteredTracks = mobileTracks.filter(t => {
+                                    const uname = t.usuario?.toLowerCase();
+                                    if (uname === 'admin') return true;
+                                    const uArea = adminUsers[uname]?.area || 'Riego';
+                                    return uArea.toLowerCase() === currentDashboardArea.toLowerCase();
+                                  });
+                                  
+                                  const filteredReadings = mobileReadings.filter(r => {
+                                    const uname = r.usuario?.toLowerCase();
+                                    if (uname === 'admin') return true;
+                                    const uArea = adminUsers[uname]?.area || 'Riego';
+                                    return uArea.toLowerCase() === currentDashboardArea.toLowerCase();
+                                  });
+
                                   // 1. Agregar desde los recorridos GPS existentes
-                                  mobileTracks.forEach(t => {
+                                  filteredTracks.forEach(t => {
                                     const dateStr = new Date(t.timestamp).toDateString();
                                     list.push({
                                       id: t.id,
@@ -5791,7 +7046,7 @@ function App() {
                                   });
 
                                   // 2. Agregar desde las lecturas de campo que no tengan track directo
-                                  mobileReadings.forEach(r => {
+                                  filteredReadings.forEach(r => {
                                     const dateStr = new Date(r.timestamp).toDateString();
                                     const match = list.find(item => item.usuario === r.usuario && item.dateStr === dateStr);
                                     if (!match) {
@@ -5833,6 +7088,7 @@ function App() {
                                         key={jornada.id}
                                         onClick={() => {
                                           setSelectedTrackId(jornada.id);
+                                           setZoomFocusTarget('track');
                                           setPlaybackIndex(0);
                                           setIsPlaying(false);
                                         }}
@@ -5871,7 +7127,7 @@ function App() {
                               </div>
                             </div>
                           )
-                        ) : selectedLotInfo ? (
+                        ) : (selectedLotInfo && !selectedLotInfo.isAll) ? (
                           (() => {
                             const props = selectedLotInfo.properties || {};
                             const lote = props.NOMBRELOTE || props.nombrelote || props['NOMBRE LOT'] || props.lote || props.LOTE || props.name || props.id || 'N/A';
@@ -8068,6 +9324,1799 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* Modal Overlay para Administración y Parametrización en Pantalla Completa */}
+      {adminPanelOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 9999,
+          background: 'var(--bg-app)',
+          display: 'flex',
+          flexDirection: 'column',
+          fontFamily: 'var(--font-body)',
+          color: 'var(--text-main)'
+        }}>
+          {/* Header */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '1.25rem 2rem',
+            borderBottom: '1px solid var(--border-light)',
+            background: 'var(--bg-panel)',
+            backdropFilter: 'var(--glass-blur)'
+          }}>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <ShieldCheck size={28} />
+              Parametrización de campo
+            </h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '0.9rem' }}>
+                <span style={{ color: 'var(--text-muted)' }}>
+                  Usuario: <strong style={{ color: 'var(--accent)' }}>{loggedAdminUser || 'admin'}</strong>
+                </span>
+                <button
+                  onClick={() => {
+                    setIsAdminLoggedIn(false);
+                    setAdminRole(null);
+                    setAdminArea(null);
+                    setLoggedAdminUser('');
+                    sessionStorage.removeItem('isAdminLoggedIn');
+                    sessionStorage.removeItem('adminRole');
+                    sessionStorage.removeItem('adminArea');
+                    sessionStorage.removeItem('loggedAdminUser');
+                    setAdminPanelOpen(false);
+                    setSettingsOpen(false);
+                  }}
+                  className="btn btn-secondary"
+                  style={{ 
+                    padding: '0.35rem 0.75rem', 
+                    fontSize: '0.8rem', 
+                    borderColor: 'rgba(255, 75, 75, 0.25)', 
+                    color: 'var(--danger)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cerrar Sesión
+                </button>
+              </div>
+              <button 
+                onClick={() => setAdminPanelOpen(false)} 
+                style={{
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid var(--border-light)',
+                  borderRadius: '50%',
+                  width: '40px',
+                  height: '40px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: 'var(--text-main)',
+                  transition: 'var(--transition-fast)'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 75, 75, 0.1)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
+              >
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+
+          {/* Body container con Tab Sidebar */}
+          <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+            {/* Sidebar */}
+            <div style={{
+              width: '280px',
+              borderRight: '1px solid var(--border-light)',
+              background: 'rgba(0, 0, 0, 0.2)',
+              padding: '2rem 1rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.5rem'
+            }}>
+              {[
+                { id: 'usuarios', label: 'Gestión de Usuarios', icon: <Users size={18} /> },
+                { id: 'formularios', label: 'Creador de Formularios', icon: <Sliders size={18} /> },
+                { id: 'permisos', label: 'Permisos de Formularios', icon: <ShieldCheck size={18} /> },
+                ...(adminRole === 'admin' ? [{ id: 'areas', label: 'Gestión de Áreas', icon: <Plus size={18} /> }] : [])
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setAdminActiveTab(tab.id)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    padding: '0.85rem 1.25rem',
+                    border: 'none',
+                    borderRadius: 'var(--radius-md)',
+                    background: adminActiveTab === tab.id ? 'var(--primary-glow)' : 'transparent',
+                    color: adminActiveTab === tab.id ? 'var(--accent)' : 'var(--text-muted)',
+                    textAlign: 'left',
+                    fontWeight: adminActiveTab === tab.id ? 600 : 500,
+                    cursor: 'pointer',
+                    fontSize: '0.95rem',
+                    transition: 'var(--transition-fast)',
+                    width: '100%'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (adminActiveTab !== tab.id) e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
+                  }}
+                  onMouseLeave={(e) => {
+                    if (adminActiveTab !== tab.id) e.currentTarget.style.background = 'transparent';
+                  }}
+                >
+                  {tab.icon}
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Content Area */}
+            <div style={{ flex: 1, padding: '2.5rem', overflowY: 'auto', background: 'var(--bg-app)' }}>
+              
+              {/* TAB 1: GESTION DE USUARIOS */}
+              {adminActiveTab === 'usuarios' && (
+                <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-start' }}>
+                  {/* Crear usuario */}
+                  <div className="glass-panel" style={{ width: '240px', flexShrink: 0, padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+                    <h3 style={{ fontSize: '0.95rem', fontWeight: 700, borderBottom: '1px solid var(--border-light)', paddingBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <Plus size={14} className="text-accent" />
+                      Crear Usuario
+                    </h3>
+                    <form onSubmit={(e) => {
+                      e.preventDefault();
+                      const uname = newUsername.trim().toLowerCase();
+                      const curJefeInfo = adminUsers[loggedAdminUser?.toLowerCase()];
+                      const availableAreasToCreate = adminRole === 'admin'
+                        ? adminAreasList
+                        : (curJefeInfo?.areas_acceso && curJefeInfo.areas_acceso.length > 0
+                            ? curJefeInfo.areas_acceso
+                            : [adminArea || curJefeInfo?.area].filter(Boolean));
+
+                      const areaToSave = adminRole === 'admin'
+                        ? newArea
+                        : (availableAreasToCreate.length > 1 ? newArea : availableAreasToCreate[0]);
+
+                      const roleToSave = adminRole === 'jefe' ? 'operario' : newUserRoleLocal;
+
+                      // Para jefes: áreas de areas_acceso seleccionadas; para operarios: área única
+                      const areasAccesoToSave = (roleToSave === 'jefe') ? newCreatedJefeAreas : [];
+                      const effectiveArea = (roleToSave === 'jefe')
+                        ? (newCreatedJefeAreas[0] || areaToSave)
+                        : areaToSave;
+
+                      const creatorFincas = adminRole === 'admin' ? ['HLG', 'HSL', 'TUC'] : (curJefeInfo?.fincas || []);
+                      const finalAvailableFincas = creatorFincas.length > 0 ? creatorFincas : ['HLG', 'HSL', 'TUC'];
+                      const fincasToSave = finalAvailableFincas.length === 1
+                        ? [finalAvailableFincas[0]]
+                        : newCreatedUserFincas;
+
+                      if (!uname || !newPassword) {
+                        showAdminToast("Por favor llena todos los campos.", "error");
+                        return;
+                      }
+                      if (roleToSave === 'jefe' && areasAccesoToSave.length === 0) {
+                        showAdminToast("Selecciona al menos un área de trabajo para el Jefe.", "error");
+                        return;
+                      }
+                      if (roleToSave === 'operario' && !effectiveArea) {
+                        showAdminToast("Selecciona un área de trabajo.", "error");
+                        return;
+                      }
+                      if (fincasToSave.length === 0) {
+                        showAdminToast("Debe asignar al menos una finca al usuario.", "error");
+                        return;
+                      }
+                      if (adminUsers[uname]) {
+                        showAdminToast("Este usuario ya existe.", "error");
+                        return;
+                      }
+                      const newUserData = { 
+                        password: newPassword, 
+                        area: effectiveArea, 
+                        role: roleToSave,
+                        fincas: fincasToSave,
+                        finca: fincasToSave.length === 1 ? fincasToSave[0] : (fincasToSave.length === 3 ? 'Ambas' : fincasToSave[0] || 'Ambas'),
+                        status: 'activo'
+                      };
+                      if (roleToSave === 'jefe' && areasAccesoToSave.length > 0) {
+                        newUserData.areas_acceso = areasAccesoToSave;
+                      }
+                      const updated = { ...adminUsers, [uname]: newUserData };
+                      saveAdminUsers(updated);
+                      setNewUsername('');
+                      setNewPassword('');
+                      setNewCreatedUserFincas([]);
+                      setNewCreatedJefeAreas([]);
+                      setNewUserRoleLocal('operario');
+                    }} style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                      
+                      <div className="filter-group" style={{ margin: 0 }}>
+                        <label style={{ fontSize: '0.72rem', fontWeight: 600, marginBottom: '0.15rem' }}>Nombre de Usuario</label>
+                        <input
+                          type="text"
+                          required
+                          className="select-control"
+                          value={newUsername}
+                          onChange={(e) => setNewUsername(e.target.value)}
+                          placeholder="Ej: riego2"
+                          style={{ padding: '0.3rem 0.5rem', fontSize: '0.8rem', width: '100%' }}
+                        />
+                      </div>
+
+                      <div className="filter-group" style={{ margin: 0 }}>
+                        <label style={{ fontSize: '0.72rem', fontWeight: 600, marginBottom: '0.15rem' }}>Contraseña</label>
+                        <input
+                          type="text"
+                          required
+                          className="select-control"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          placeholder="Contraseña"
+                          style={{ padding: '0.3rem 0.5rem', fontSize: '0.8rem', width: '100%' }}
+                        />
+                      </div>
+
+                      {/* Selector de Rol — siempre arriba para que controle lo que aparece después */}
+                      {adminRole === 'admin' && (
+                        <div className="filter-group" style={{ margin: 0 }}>
+                          <label style={{ fontSize: '0.72rem', fontWeight: 600, marginBottom: '0.15rem' }}>Rol de Usuario</label>
+                          <select
+                            className="select-control"
+                            value={newUserRoleLocal}
+                            onChange={(e) => {
+                              setNewUserRoleLocal(e.target.value);
+                              setNewCreatedJefeAreas([]);
+                              setNewArea(adminAreasList[0] || '');
+                            }}
+                            style={{ padding: '0.3rem 0.5rem', fontSize: '0.8rem', width: '100%', background: 'var(--bg-input)' }}
+                          >
+                            <option value="operario">Operario</option>
+                            <option value="jefe">Jefe de Área</option>
+                          </select>
+                        </div>
+                      )}
+
+                      {/* Selector de Área — condicional según rol */}
+                      {(() => {
+                        const curJefeInfo = adminUsers[loggedAdminUser?.toLowerCase()];
+                        const availableAreasToCreate = adminRole === 'admin'
+                          ? adminAreasList
+                          : (curJefeInfo?.areas_acceso && curJefeInfo.areas_acceso.length > 0
+                              ? curJefeInfo.areas_acceso
+                              : [adminArea || curJefeInfo?.area].filter(Boolean));
+
+                        // Si es Jefe: checkboxes multi-área
+                        if (newUserRoleLocal === 'jefe' && adminRole === 'admin') {
+                          return (
+                            <div className="filter-group" style={{ margin: 0 }}>
+                              <label style={{ fontSize: '0.72rem', fontWeight: 600, marginBottom: '0.15rem' }}>Áreas del Jefe</label>
+                              <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap', marginTop: '0.2rem' }}>
+                                {adminAreasList.map(area => {
+                                  const checked = newCreatedJefeAreas.includes(area);
+                                  return (
+                                    <label key={area} style={{
+                                      display: 'flex', alignItems: 'center', gap: '0.25rem',
+                                      padding: '0.2rem 0.4rem',
+                                      borderRadius: 'var(--radius-sm)',
+                                      background: checked ? 'rgba(56,189,248,0.15)' : 'var(--bg-input)',
+                                      border: `1px solid ${checked ? 'var(--accent)' : 'var(--border-light)'}`,
+                                      cursor: 'pointer', fontSize: '0.72rem',
+                                      color: checked ? 'var(--accent)' : 'var(--text-muted)'
+                                    }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        style={{ accentColor: 'var(--accent)', cursor: 'pointer', width: '10px', height: '10px' }}
+                                        onChange={() => {
+                                          setNewCreatedJefeAreas(prev =>
+                                            prev.includes(area) ? prev.filter(a => a !== area) : [...prev, area]
+                                          );
+                                        }}
+                                      />
+                                      {area}
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                              {newCreatedJefeAreas.length > 0 && (
+                                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                                  {newCreatedJefeAreas.length} área(s)
+                                </div>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        // Si es Operario: select de área simple
+                        if (adminRole === 'admin' || availableAreasToCreate.length > 1) {
+                          return (
+                            <div className="filter-group" style={{ margin: 0 }}>
+                              <label style={{ fontSize: '0.72rem', fontWeight: 600, marginBottom: '0.15rem' }}>Área de Trabajo</label>
+                              <select
+                                className="select-control"
+                                value={newArea}
+                                onChange={(e) => setNewArea(e.target.value)}
+                                style={{ padding: '0.3rem 0.5rem', fontSize: '0.8rem', width: '100%', background: 'var(--bg-input)' }}
+                              >
+                                {availableAreasToCreate.map(areaOpt => (
+                                  <option key={areaOpt} value={areaOpt}>{areaOpt}</option>
+                                ))}
+                              </select>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
+
+                      {/* Selector de Fincas condicional */}
+                      {(() => {
+                        const curJefeInfo = adminUsers[loggedAdminUser?.toLowerCase()];
+                        const creatorFincas = adminRole === 'admin' ? ['HLG', 'HSL', 'TUC'] : (curJefeInfo?.fincas || []);
+                        const finalAvailableFincas = creatorFincas.length > 0 ? creatorFincas : ['HLG', 'HSL', 'TUC'];
+
+                        if (finalAvailableFincas.length > 1) {
+                          return (
+                            <div className="filter-group" style={{ margin: 0 }}>
+                              <label style={{ fontSize: '0.72rem', fontWeight: 600, marginBottom: '0.15rem' }}>Fincas</label>
+                              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.15rem' }}>
+                                {finalAvailableFincas.map(f => {
+                                  const checked = newCreatedUserFincas.includes(f);
+                                  return (
+                                    <label key={f} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.75rem', cursor: 'pointer', color: checked ? 'var(--accent)' : 'var(--text-muted)' }}>
+                                      <input type="checkbox" checked={checked} onChange={() => { setNewCreatedUserFincas(prev => prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f]); }} style={{ cursor: 'pointer', accentColor: 'var(--accent)', width: '11px', height: '11px' }} />
+                                      {f}
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        } else if (finalAvailableFincas.length === 1) {
+                          return (
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                              Finca asignada automáticamente: <strong>{finalAvailableFincas[0]}</strong>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
+
+                      <button type="submit" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '0.4rem', fontSize: '0.82rem' }}>
+                        Crear Usuario
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Lista de usuarios */}
+                  <div className="glass-panel" style={{ flex: 1, minWidth: 0, padding: '1.25rem', overflowX: 'auto' }}>
+                    <h3 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: '0.75rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.5rem' }}>
+                      Operarios Registrados
+                    </h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                      {/* Cabecera */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '100px 110px 160px 1fr', gap: '0.4rem', padding: '0.3rem 0.5rem', fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border-light)' }}>
+                        <span>Usuario</span>
+                        <span>Contraseña</span>
+                        <span>Área / Fincas</span>
+                        <span style={{ textAlign: 'right' }}>Acciones</span>
+                      </div>
+                      {Object.entries(adminUsers)
+                        .filter(([uname, uinfo]) => {
+                          if (adminRole === 'admin') return true;
+                          return canJefeManageUser(loggedAdminUser, uinfo);
+                        })
+                        .sort((a, b) => a[0].localeCompare(b[0]))
+                        .map(([uname, uinfo]) => {
+                          const isInactive = uinfo.status && uinfo.status !== 'activo';
+                          const isRequestedDelete = uinfo.status === 'solicitado_eliminar';
+                          const isEliminating = uinfo.status === 'eliminando';
+                          const isEditing = editingUserKey === uname;
+                          const isUserEditable = adminRole === 'admin' || (adminRole === 'jefe' && canJefeManageUser(loggedAdminUser, uinfo));
+
+                          let daysLeft = 90;
+                          if (isEliminating && uinfo.deletion_start_date) {
+                            const diffMs = Date.now() - uinfo.deletion_start_date;
+                            daysLeft = 90 - Math.floor(diffMs / (24 * 60 * 60 * 1000));
+                            if (daysLeft < 0) daysLeft = 0;
+                          }
+
+                          return (
+                            <div
+                              key={uname}
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: '100px 110px 160px 1fr',
+                                gap: '0.4rem',
+                                alignItems: 'start',
+                                padding: '0.4rem 0.5rem',
+                                borderRadius: 'var(--radius-sm)',
+                                background: isEditing ? 'rgba(56,189,248,0.06)' : 'transparent',
+                                border: isEditing ? '1px solid rgba(56,189,248,0.2)' : '1px solid transparent',
+                                opacity: isInactive ? 0.5 : 1,
+                                transition: 'all 0.2s ease',
+                                borderBottom: '1px solid rgba(255,255,255,0.04)'
+                              }}
+                            >
+                              {/* Col 1: Usuario */}
+                              <div style={{ fontWeight: 600, fontSize: '0.78rem', minWidth: 0 }}>
+                                {isEditing ? (
+                                  <input
+                                    type="text"
+                                    className="select-control"
+                                    value={editingUserTempName}
+                                    onChange={(e) => setEditingUserTempName(e.target.value)}
+                                    disabled={uname === 'admin'}
+                                    style={{ padding: '0.25rem 0.35rem', fontSize: '0.75rem', background: 'var(--bg-input)', width: '100%' }}
+                                  />
+                                ) : (
+                                  <>
+                                  <span style={{ wordBreak: 'break-all', fontSize: '0.78rem' }}>{uname}</span>
+                                    {isRequestedDelete && <span style={{ fontSize: '0.65rem', color: 'orange', display: 'block', fontWeight: 500 }}>(Baja solicitada)</span>}
+                                    {isEliminating && <span style={{ fontSize: '0.65rem', color: 'var(--danger)', display: 'block', fontWeight: 500 }}>({daysLeft}d para eliminar)</span>}
+                                  </>
+                                )}
+                              </div>
+                              {/* Col 2: Contraseña */}
+                              <div style={{ fontSize: '0.75rem', minWidth: 0 }}>
+                                {isEditing ? (
+                                  <input
+                                    type="text"
+                                    className="select-control"
+                                    value={editingUserTempPass}
+                                    onChange={(e) => setEditingUserTempPass(e.target.value)}
+                                    style={{ padding: '0.25rem 0.35rem', fontSize: '0.75rem', background: 'var(--bg-input)', width: '100%' }}
+                                  />
+                                ) : (
+                                  <span style={{ color: 'var(--text-muted)', fontFamily: 'monospace', wordBreak: 'break-all', fontSize: '0.75rem' }}>{uinfo.password}</span>
+                                )}
+                              </div>
+                              {/* Col 3: Área / Fincas */}
+                              <div style={{ fontSize: '0.75rem', minWidth: 0 }}>
+                                {uname === 'admin' ? (
+                                  <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Administrador General</span>
+                                ) : (
+                                  <div>
+                                    {/* Selector de área (siempre visible pero solo editable si es admin y no editando) */}
+                                    <select
+                                      className="select-control"
+                                      value={uinfo.area || ''}
+                                      onChange={(e) => {
+                                        const updated = { ...adminUsers, [uname]: { ...uinfo, area: e.target.value } };
+                                        setAdminUsers(updated);
+                                        saveAdminUsers(updated);
+                                      }}
+                                      disabled={adminRole !== 'admin' || isInactive || isEditing}
+                                      style={{ padding: '0.18rem 0.35rem', fontSize: '0.72rem', background: 'var(--bg-input)', width: '100%' }}
+                                    >
+                                      {adminAreasList.map(areaOpt => (
+                                        <option key={areaOpt} value={areaOpt}>{areaOpt}</option>
+                                      ))}
+                                    </select>
+                                    <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)', display: 'block', marginTop: '0.15rem' }}>
+                                      {uinfo.role === 'jefe' ? 'Jefe de Área' : 'Operario'}
+                                    </span>
+                                    {!isEditing && uinfo.fincas && uinfo.fincas.length > 0 && (
+                                      <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)', display: 'block' }}>
+                                        Finca(s): {uinfo.fincas.join(', ')}
+                                      </span>
+                                    )}
+                                    {isEditing && (
+                                      <div style={{ marginTop: '0.4rem' }}>
+                                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: '0.2rem', fontWeight: 700 }}>FINCAS:</div>
+                                        <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
+                                          {['HLG', 'HSL', 'TUC'].map(f => {
+                                            const checked = editingUserTempFincas.includes(f);
+                                            return (
+                                              <label key={f} style={{
+                                                display: 'flex', alignItems: 'center', gap: '0.2rem',
+                                                padding: '0.15rem 0.4rem',
+                                                borderRadius: '4px',
+                                                background: checked ? 'rgba(56,189,248,0.15)' : 'rgba(255,255,255,0.05)',
+                                                border: `1px solid ${checked ? 'var(--accent)' : 'rgba(255,255,255,0.12)'}`,
+                                                cursor: 'pointer', fontSize: '0.72rem',
+                                                color: checked ? 'var(--accent)' : 'var(--text-muted)'
+                                              }}>
+                                                <input
+                                                  type="checkbox"
+                                                  checked={checked}
+                                                  style={{ accentColor: 'var(--accent)', cursor: 'pointer', width: '10px', height: '10px' }}
+                                                  onChange={() => {
+                                                    setEditingUserTempFincas(prev =>
+                                                      prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f]
+                                                    );
+                                                  }}
+                                                />
+                                                {f}
+                                              </label>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                              {/* Col 4: Acciones */}
+                              <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: '0.25rem', alignItems: 'flex-start', alignContent: 'flex-start' }}>
+                                {isEditing ? (
+                                  <>
+                                    <button
+                                      className="btn btn-primary"
+                                      onClick={() => {
+                                        const nextName = editingUserTempName.trim().toLowerCase();
+                                        const nextPass = editingUserTempPass.trim();
+                                        if (!nextName || !nextPass) { showAdminToast('El nombre y contraseña no pueden estar vacíos.', 'error'); return; }
+                                        if (nextName !== uname && adminUsers[nextName]) { showAdminToast('El nombre de usuario ya está en uso.', 'error'); return; }
+                                        const nextUsers = { ...adminUsers };
+                                        const fincasToSave = editingUserTempFincas.length > 0 ? editingUserTempFincas : (uinfo.fincas || []);
+                                        const updatedUserData = {
+                                          ...uinfo, password: nextPass, fincas: fincasToSave,
+                                          finca: fincasToSave.length === 1 ? fincasToSave[0] : (fincasToSave.length === 3 ? 'Ambas' : fincasToSave[0] || 'Ambas')
+                                        };
+                                        if (nextName !== uname) { nextUsers[nextName] = updatedUserData; delete nextUsers[uname]; }
+                                        else { nextUsers[uname] = updatedUserData; }
+                                        setAdminUsers(nextUsers); saveAdminUsers(nextUsers);
+                                        showAdminToast('Usuario modificado con éxito.');
+                                        setEditingUserKey(null); setEditingUserTempFincas([]);
+                                      }}
+                                      style={{ padding: '0.28rem 0.5rem', fontSize: '0.7rem', justifyContent: 'center' }}
+                                    >Guardar</button>
+                                    <button
+                                      className="btn btn-secondary"
+                                      onClick={() => { setEditingUserKey(null); setEditingUserTempFincas([]); }}
+                                      style={{ padding: '0.28rem 0.5rem', fontSize: '0.7rem', color: 'var(--text-muted)', justifyContent: 'center' }}
+                                    >Cancelar</button>
+                                  </>
+                                ) : (
+                                  <>
+                                    {(adminRole === 'admin' || (adminRole === 'jefe' && isUserEditable)) && uname !== 'admin' && !isInactive && (
+                                      <button
+                                        className="btn btn-secondary"
+                                        onClick={() => {
+                                          setPermisosModalUser(uname);
+                                          setPermisosTemp({
+                                            fincas: Array.isArray(uinfo.fincas) ? [...uinfo.fincas] : (uinfo.finca ? [uinfo.finca] : []),
+                                            areas_acceso: Array.isArray(uinfo.areas_acceso) ? [...uinfo.areas_acceso] : []
+                                          });
+                                        }}
+                                        style={{ padding: '0.28rem 0.5rem', fontSize: '0.7rem', color: '#a78bfa', borderColor: 'rgba(167,139,250,0.25)', justifyContent: 'center' }}
+                                      >🔑 Permisos</button>
+                                    )}
+                                    {isUserEditable && !isInactive && (
+                                      <button
+                                        className="btn btn-secondary"
+                                        onClick={() => {
+                                          setEditingUserKey(uname); setEditingUserTempName(uname); setEditingUserTempPass(uinfo.password);
+                                          setEditingUserTempFincas(Array.isArray(uinfo.fincas) ? [...uinfo.fincas] : (uinfo.finca ? [uinfo.finca] : []));
+                                        }}
+                                        style={{ padding: '0.28rem 0.5rem', fontSize: '0.7rem', color: 'var(--accent)', borderColor: 'rgba(0,242,254,0.2)', justifyContent: 'center' }}
+                                      >✏️ Editar</button>
+                                    )}
+                                    {!isInactive && uname !== 'admin' && (
+                                      <button
+                                        className="btn btn-secondary"
+                                        onClick={() => {
+                                          const nextStatus = adminRole === 'admin' ? 'eliminando' : 'solicitado_eliminar';
+                                          const updated = { ...adminUsers, [uname]: { ...uinfo, status: nextStatus, deletion_start_date: adminRole === 'admin' ? Date.now() : null } };
+                                          saveAdminUsers(updated);
+                                          showAdminToast(adminRole === 'admin' ? 'Baja aprobada. Iniciado conteo de 90 días.' : 'Baja de operario solicitada.');
+                                        }}
+                                        style={{ padding: '0.28rem 0.5rem', fontSize: '0.7rem', color: 'var(--danger)', borderColor: 'rgba(255,75,75,0.2)', justifyContent: 'center' }}
+                                      >🗑 Eliminar</button>
+                                    )}
+                                    {isRequestedDelete && (
+                                      <>
+                                        {adminRole === 'admin' && (
+                                          <button className="btn btn-primary" onClick={() => { const updated = { ...adminUsers, [uname]: { ...uinfo, status: 'eliminando', deletion_start_date: Date.now() } }; saveAdminUsers(updated); showAdminToast('Baja aceptada. Iniciada cuenta regresiva de 90 días.'); }} style={{ padding: '0.28rem 0.5rem', fontSize: '0.68rem', justifyContent: 'center' }}>Aceptar baja</button>
+                                        )}
+                                        <button className="btn btn-secondary" onClick={() => { const updated = { ...adminUsers, [uname]: { ...uinfo, status: 'activo' } }; saveAdminUsers(updated); showAdminToast('Operario reactivado correctamente.'); }} style={{ padding: '0.28rem 0.5rem', fontSize: '0.68rem', color: 'var(--accent)', justifyContent: 'center' }}>Reactivar</button>
+                                      </>
+                                    )}
+                                    {isEliminating && (
+                                      <>
+                                        <button className="btn btn-secondary" onClick={() => { const updated = { ...adminUsers, [uname]: { ...uinfo, status: 'activo' } }; saveAdminUsers(updated); showAdminToast('Operario reactivado correctamente.'); }} style={{ padding: '0.28rem 0.5rem', fontSize: '0.68rem', color: 'var(--accent)', justifyContent: 'center' }}>Reactivar</button>
+                                        {adminRole === 'admin' && (
+                                          <button className="btn btn-secondary" onClick={() => setUserToDeleteTotal(uname)} style={{ padding: '0.28rem 0.5rem', fontSize: '0.68rem', color: 'var(--danger)', justifyContent: 'center' }}>Elim. Total</button>
+                                        )}
+                                      </>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: CREADOR DE FORMULARIOS */}
+              {adminActiveTab === 'formularios' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                  {/* Selector de Área — filtrado según permisos del usuario conectado */}
+                  {(() => {
+                    const curJefeInfo = adminUsers[loggedAdminUser?.toLowerCase()];
+                    const editableAreas = adminRole === 'admin'
+                      ? adminAreasList
+                      : (() => {
+                          const areas = curJefeInfo?.areas_acceso && curJefeInfo.areas_acceso.length > 0
+                            ? curJefeInfo.areas_acceso
+                            : [adminArea || curJefeInfo?.area].filter(Boolean);
+                          return areas.filter(a => adminAreasList.includes(a));
+                        })();
+
+                    // Si el área seleccionada no está en editableAreas, reset al primero disponible
+                    if (editableAreas.length > 0 && !editableAreas.includes(selectedAreaEdit)) {
+                      setTimeout(() => { setSelectedAreaEdit(editableAreas[0]); setActiveFormIndexEdit(null); }, 0);
+                    }
+
+                    return (
+                      <div className="glass-panel" style={{ padding: '1.5rem 2rem', display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
+                        <div className="filter-group" style={{ margin: 0, minWidth: '220px' }}>
+                          <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>
+                            {editableAreas.length === 1 ? 'Área de Trabajo' : 'Seleccionar Área de Trabajo'}
+                          </label>
+                          {editableAreas.length === 1 ? (
+                            <div style={{
+                              padding: '0.5rem 0.75rem',
+                              background: 'var(--bg-input)',
+                              border: '1px solid var(--border-light)',
+                              borderRadius: 'var(--radius-sm)',
+                              fontSize: '0.9rem',
+                              color: 'var(--accent)',
+                              fontWeight: 600
+                            }}>
+                              {editableAreas[0]}
+                            </div>
+                          ) : (
+                            <select
+                              className="select-control"
+                              value={selectedAreaEdit}
+                              onChange={(e) => {
+                                setSelectedAreaEdit(e.target.value);
+                                setActiveFormIndexEdit(null);
+                              }}
+                              style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem', width: '100%', background: 'var(--bg-input)' }}
+                            >
+                              {editableAreas.map(area => (
+                                <option key={area} value={area}>{area}</option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+
+                        {showCustomAreaInput && (
+                          <div className="filter-group" style={{ margin: 0, minWidth: '220px' }}>
+                            <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Nombre de la Nueva Área</label>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                              <input 
+                                type="text"
+                                className="select-control"
+                                value={customAreaName}
+                                onChange={(e) => setCustomAreaName(e.target.value)}
+                                placeholder="Ej: Riego"
+                                style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem' }}
+                              />
+                              <button 
+                                className="btn btn-primary"
+                                onClick={() => {
+                                  const name = customAreaName.trim();
+                                  if (!name) return;
+                                  const updated = { ...adminFormularios, [name]: { formularios: [] } };
+                                  setAdminFormularios(updated);
+                                  setSelectedAreaEdit(name);
+                                  setShowCustomAreaInput(false);
+                                  setCustomAreaName('');
+                                  setActiveFormIndexEdit(null);
+                                }}
+                              >
+                                Crear
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
+                          {(() => {
+                            const curJefeInfo = adminUsers[loggedAdminUser?.toLowerCase()];
+                            const jefeAreas = curJefeInfo?.areas_acceso && curJefeInfo.areas_acceso.length > 0
+                              ? curJefeInfo.areas_acceso
+                              : [adminArea || curJefeInfo?.area].filter(Boolean);
+                            const canCreate = adminRole === 'admin' || (adminRole === 'jefe' && jefeAreas.includes(selectedAreaEdit));
+                            
+                            if (!canCreate) return null;
+                            return (
+                              <button 
+                                className="btn btn-primary"
+                                onClick={() => {
+                                  const areaForms = adminFormularios[selectedAreaEdit]?.formularios || [];
+                                  const curJefeInfoLocal = adminUsers[loggedAdminUser?.toLowerCase()];
+                                  const creatorFincas = adminRole === 'admin' ? ['HLG', 'HSL', 'TUC'] : (curJefeInfoLocal?.fincas || []);
+                                  const defaultFincas = creatorFincas.length === 1 ? [creatorFincas[0]] : ['Todas'];
+
+                                  const newFormObj = {
+                                    id: 'form_' + selectedAreaEdit.toLowerCase() + '_' + Date.now(),
+                                    titulo: 'Nuevo Formulario ' + selectedAreaEdit,
+                                    labels: {
+                                      iniciar: 'Iniciar Labor',
+                                      finalizar: 'Finalizar Labor'
+                                    },
+                                    fincas: defaultFincas,
+                                    fields: [
+                                      { id: 'finca', label: 'Finca', type: 'select', options: ['Finca 01', 'Finca 02'], pinned: true, required: true },
+                                      { id: 'lote', label: 'Lote', type: 'text', pinned: true, required: true }
+                                    ]
+                                  };
+                                  const updated = {
+                                    ...adminFormularios,
+                                    [selectedAreaEdit]: {
+                                      formularios: [...areaForms, newFormObj]
+                                    }
+                                  };
+                                  setAdminFormularios(updated);
+                                  setActiveFormIndexEdit(areaForms.length);
+                                }}
+                              >
+                                <Plus size={16} />
+                                Crear Nuevo Formulario en {selectedAreaEdit}
+                              </button>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Listado y editor de formularios de la área */}
+                  <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start' }}>
+                    {/* Formularios creados */}
+                    <div className="glass-panel" style={{ flex: 1, padding: '1.5rem', maxWidth: '300px', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      <h4 style={{ fontSize: '0.95rem', fontWeight: 600, borderBottom: '1px solid var(--border-light)', paddingBottom: '0.5rem' }}>
+                        Formularios ({selectedAreaEdit})
+                      </h4>
+                      {(adminFormularios[selectedAreaEdit]?.formularios || []).length === 0 ? (
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', margin: 0 }}>No hay formularios creados para esta área.</p>
+                      ) : (
+                        (adminFormularios[selectedAreaEdit]?.formularios || []).map((form, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => setActiveFormIndexEdit(idx)}
+                            style={{
+                              padding: '0.75rem 1rem',
+                              background: activeFormIndexEdit === idx ? 'rgba(0, 242, 254, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                              border: activeFormIndexEdit === idx ? '1px solid var(--accent)' : '1px solid var(--border-light)',
+                              borderRadius: 'var(--radius-sm)',
+                              color: activeFormIndexEdit === idx ? 'var(--accent)' : 'var(--text-main)',
+                              fontWeight: activeFormIndexEdit === idx ? 600 : 500,
+                              fontSize: '0.85rem',
+                              textAlign: 'left',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              width: '100%'
+                            }}
+                          >
+                            <span>{form.titulo}</span>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>({form.fields?.length || 0} campos)</span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Editor del Formulario Seleccionado */}
+                    {activeFormIndexEdit !== null && adminFormularios[selectedAreaEdit]?.formularios?.[activeFormIndexEdit] && (() => {
+                      const curJefeInfo = adminUsers[loggedAdminUser?.toLowerCase()];
+                      const jefeAreas = curJefeInfo?.areas_acceso && curJefeInfo.areas_acceso.length > 0
+                        ? curJefeInfo.areas_acceso
+                        : [adminArea || curJefeInfo?.area].filter(Boolean);
+                      const isEditable = adminRole === 'admin' || (adminRole === 'jefe' && jefeAreas.includes(selectedAreaEdit));
+                      const creatorFincas = adminRole === 'admin' ? ['HLG', 'HSL', 'TUC'] : (curJefeInfo?.fincas || []);
+                      
+                      // Forzar al formulario a heredar la finca del jefe si este solo tiene acceso a una
+                      if (creatorFincas.length === 1 && isEditable) {
+                        const formObj = adminFormularios[selectedAreaEdit].formularios[activeFormIndexEdit];
+                        if (!formObj.fincas || formObj.fincas.length !== 1 || formObj.fincas[0] !== creatorFincas[0]) {
+                          formObj.fincas = [creatorFincas[0]];
+                        }
+                      }
+
+                      return (
+                        <div className="glass-panel" style={{ flex: 2, padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                          
+                          {/* Banner de solo lectura para Jefes */}
+                          {!isEditable && (
+                            <div style={{
+                              background: 'rgba(255, 170, 0, 0.1)',
+                              border: '1px solid rgba(255, 170, 0, 0.3)',
+                              color: 'orange',
+                              padding: '0.75rem 1rem',
+                              borderRadius: 'var(--radius-sm)',
+                              fontSize: '0.85rem',
+                              fontWeight: 600,
+                              marginBottom: '0.5rem',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.5rem'
+                            }}>
+                              ⚠️ Modo de Solo Lectura. No tienes permisos para modificar formularios de otras áreas.
+                            </div>
+                          )}
+
+                          {/* Datos Básicos */}
+                          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                          <div className="filter-group" style={{ margin: 0, flex: 2 }}>
+                            <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Título del Formulario</label>
+                            <input 
+                              type="text"
+                              className="select-control"
+                              value={adminFormularios[selectedAreaEdit].formularios[activeFormIndexEdit].titulo}
+                              onChange={(e) => {
+                                const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                nextForms[activeFormIndexEdit].titulo = e.target.value;
+                                setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
+                              }}
+                              disabled={!isEditable}
+                              style={{ padding: '0.5rem 0.75rem', width: '100%' }}
+                            />
+                          </div>
+
+                          {/* Fincas Aplicables del Formulario */}
+                          <div className="filter-group" style={{ margin: 0, flex: '1 1 100%' }}>
+                            <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Fincas Aplicables</label>
+                            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
+                              {['Todas', 'HLG', 'HSL', 'TUC'].map(f => {
+                                const formObj = adminFormularios[selectedAreaEdit].formularios[activeFormIndexEdit];
+                                const currentFincas = formObj.fincas || ['Todas'];
+                                
+                                // Determinar si está checked
+                                let checked = false;
+                                if (creatorFincas.length === 1) {
+                                  checked = (f === creatorFincas[0]);
+                                } else {
+                                  checked = f === 'Todas' 
+                                    ? currentFincas.includes('Todas') || currentFincas.length === 0
+                                    : currentFincas.includes(f);
+                                }
+
+                                // Determinar si está deshabilitado
+                                let isFincaCheckboxDisabled = !isEditable;
+                                if (creatorFincas.length === 1) {
+                                  isFincaCheckboxDisabled = true; // Forzado a solo lectura ya que el jefe está bloqueado a su finca única
+                                } else {
+                                  if (f !== 'Todas' && !creatorFincas.includes(f)) {
+                                    isFincaCheckboxDisabled = true; // Jefe con múltiples fincas no puede elegir fincas ajenas
+                                  }
+                                }
+
+                                return (
+                                  <label
+                                    key={f}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '0.4rem',
+                                      fontSize: '0.85rem',
+                                      cursor: isFincaCheckboxDisabled ? 'default' : 'pointer',
+                                      color: checked ? 'var(--accent)' : 'var(--text-muted)',
+                                      opacity: isFincaCheckboxDisabled && !checked ? 0.4 : 1
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      disabled={isFincaCheckboxDisabled}
+                                      checked={checked}
+                                      onChange={() => {
+                                        let nextFincas = [...currentFincas];
+                                        if (f === 'Todas') {
+                                          nextFincas = ['Todas'];
+                                        } else {
+                                          nextFincas = nextFincas.filter(x => x !== 'Todas');
+                                          if (nextFincas.includes(f)) {
+                                            nextFincas = nextFincas.filter(x => x !== f);
+                                          } else {
+                                            nextFincas.push(f);
+                                          }
+                                          if (nextFincas.length === 0) {
+                                            nextFincas = ['Todas'];
+                                          }
+                                        }
+                                        const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                        nextForms[activeFormIndexEdit].fincas = nextFincas;
+                                        setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
+                                      }}
+                                      style={{ cursor: isFincaCheckboxDisabled ? 'default' : 'pointer', accentColor: 'var(--accent)' }}
+                                    />
+                                    {f}
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          <div className="filter-group" style={{ margin: 0, flex: 1 }}>
+                            <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Texto Botón Iniciar</label>
+                            <input 
+                              type="text"
+                              className="select-control"
+                              value={adminFormularios[selectedAreaEdit].formularios[activeFormIndexEdit].labels?.iniciar || 'Iniciar Labor'}
+                              onChange={(e) => {
+                                const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                if (!nextForms[activeFormIndexEdit].labels) nextForms[activeFormIndexEdit].labels = {};
+                                nextForms[activeFormIndexEdit].labels.iniciar = e.target.value;
+                                setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
+                              }}
+                              disabled={!isEditable}
+                              style={{ padding: '0.5rem 0.75rem', width: '100%' }}
+                            />
+                          </div>
+
+                          <div className="filter-group" style={{ margin: 0, flex: 1 }}>
+                            <label style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>Texto Botón Finalizar</label>
+                            <input 
+                              type="text"
+                              className="select-control"
+                              value={adminFormularios[selectedAreaEdit].formularios[activeFormIndexEdit].labels?.finalizar || 'Finalizar Labor'}
+                              onChange={(e) => {
+                                const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                if (!nextForms[activeFormIndexEdit].labels) nextForms[activeFormIndexEdit].labels = {};
+                                nextForms[activeFormIndexEdit].labels.finalizar = e.target.value;
+                                setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
+                              }}
+                              disabled={!isEditable}
+                              style={{ padding: '0.5rem 0.75rem', width: '100%' }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Diseñador de Campos */}
+                        <div>
+                          <h4 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.5rem' }}>
+                            Campos del Formulario
+                          </h4>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                            {(adminFormularios[selectedAreaEdit].formularios[activeFormIndexEdit].fields || []).map((field, fIdx) => (
+                              <div 
+                                key={field.id || fIdx} 
+                                draggable={isEditable}
+                                onDragStart={(e) => {
+                                  setDraggedFieldIdx(fIdx);
+                                  e.dataTransfer.effectAllowed = 'move';
+                                }}
+                                onDragOver={(e) => e.preventDefault()}
+                                onDrop={() => handleDropField(fIdx)}
+                                style={{ 
+                                  display: 'flex', 
+                                  gap: '1rem', 
+                                  alignItems: 'center', 
+                                  background: draggedFieldIdx === fIdx ? 'rgba(0, 242, 254, 0.05)' : 'rgba(255,255,255,0.01)', 
+                                  border: draggedFieldIdx === fIdx ? '1px dashed var(--accent)' : '1px solid var(--border-light)', 
+                                  padding: '1rem', 
+                                  borderRadius: 'var(--radius-sm)', 
+                                  flexWrap: 'wrap',
+                                  transition: 'all 0.15s ease'
+                                }}
+                              >
+                                {isEditable && (
+                                  <div 
+                                    style={{ 
+                                      cursor: 'grab', 
+                                      display: 'flex', 
+                                      alignItems: 'center', 
+                                      justifyContent: 'center', 
+                                      color: 'var(--text-muted)',
+                                      paddingRight: '0.2rem' 
+                                    }}
+                                    title="Arrastrar para cambiar el orden de este campo"
+                                  >
+                                    <GripVertical size={16} />
+                                  </div>
+                                )}
+                                
+                                {/* Label */}
+                                <div className="filter-group" style={{ margin: 0, flex: 2 }}>
+                                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Etiqueta (Nombre)</label>
+                                  <input 
+                                    type="text"
+                                    className="select-control"
+                                    value={field.label}
+                                    onChange={(e) => {
+                                      const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                      nextForms[activeFormIndexEdit].fields[fIdx].label = e.target.value;
+                                      nextForms[activeFormIndexEdit].fields[fIdx].id = e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '_');
+                                      setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
+                                    }}
+                                    disabled={!isEditable}
+                                    style={{ padding: '0.4rem 0.6rem', width: '100%', fontSize: '0.85rem' }}
+                                  />
+                                </div>
+
+                                {/* Tipo */}
+                                <div className="filter-group" style={{ margin: 0, flex: 1 }}>
+                                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Tipo de Entrada</label>
+                                  <select 
+                                    className="select-control"
+                                    value={field.type}
+                                    onChange={(e) => {
+                                      const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                      nextForms[activeFormIndexEdit].fields[fIdx].type = e.target.value;
+                                      if (e.target.value === 'select' && !field.options) {
+                                        nextForms[activeFormIndexEdit].fields[fIdx].options = ['Opción A', 'Opción B'];
+                                      }
+                                      setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
+                                    }}
+                                    disabled={!isEditable}
+                                    style={{ padding: '0.4rem 0.6rem', width: '100%', fontSize: '0.85rem', background: 'var(--bg-input)' }}
+                                  >
+                                    <option value="text">Texto</option>
+                                    <option value="number">Número</option>
+                                    <option value="select">Selección Desplegable</option>
+                                    <option value="checkbox">Casilla de Verificación (Check)</option>
+                                    <option value="textarea">Área de Texto (Comentario)</option>
+                                  </select>
+                                </div>
+
+                                {/* Candado Pinned */}
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem' }}>
+                                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Fijar (Candado)</span>
+                                  <input 
+                                    type="checkbox"
+                                    checked={field.pinned !== false}
+                                    onChange={(e) => {
+                                      const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                      nextForms[activeFormIndexEdit].fields[fIdx].pinned = e.target.checked;
+                                      setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
+                                    }}
+                                    disabled={!isEditable}
+                                    style={{ width: '18px', height: '18px' }}
+                                  />
+                                </div>
+
+                                {/* Requerido */}
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem' }}>
+                                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Requerido</span>
+                                  <input 
+                                    type="checkbox"
+                                    checked={field.required === true}
+                                    onChange={(e) => {
+                                      const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                      nextForms[activeFormIndexEdit].fields[fIdx].required = e.target.checked;
+                                      setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
+                                    }}
+                                    disabled={!isEditable}
+                                    style={{ width: '18px', height: '18px' }}
+                                  />
+                                </div>
+
+                                {/* Opciones de Select */}
+                                {(field.type === 'select' || field.type === 'checkbox') && (
+                                  <div className="filter-group" style={{ margin: 0, flex: '1 1 100%', marginTop: '0.5rem' }}>
+                                    <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Opciones de la Lista (separadas por coma)</label>
+                                    <input 
+                                      type="text"
+                                      className="select-control"
+                                      value={optionsInputs[`${selectedAreaEdit}_${activeFormIndexEdit}_${fIdx}`] !== undefined ? optionsInputs[`${selectedAreaEdit}_${activeFormIndexEdit}_${fIdx}`] : (field.options || []).join(', ')}
+                                      onChange={(e) => {
+                                        const nextText = e.target.value;
+                                        setOptionsInputs({
+                                          ...optionsInputs,
+                                          [`${selectedAreaEdit}_${activeFormIndexEdit}_${fIdx}`]: nextText
+                                        });
+                                        const parsedOptions = nextText.split(',').map(o => o.trim()).filter(Boolean);
+                                        const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                        nextForms[activeFormIndexEdit].fields[fIdx].options = parsedOptions;
+                                        setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
+                                      }}
+                                      placeholder="Ej: Finca 01, Finca 02, Finca 03"
+                                      style={{ padding: '0.4rem 0.6rem', width: '100%', fontSize: '0.8rem' }}
+                                    />
+                                  </div>
+                                )}
+
+                                {/* Eliminar campo */}
+                                <button 
+                                  className="btn btn-secondary"
+                                  onClick={() => {
+                                    const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                    nextForms[activeFormIndexEdit].fields.splice(fIdx, 1);
+                                    setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
+                                  }}
+                                  style={{ padding: '0.35rem 0.5rem', color: 'var(--danger)', borderColor: 'rgba(255,75,75,0.2)', marginLeft: 'auto' }}
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            ))}
+
+                            {isEditable && (
+                              <button 
+                                className="btn btn-secondary"
+                                onClick={() => {
+                                  const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                  nextForms[activeFormIndexEdit].fields.push({
+                                    id: 'campo_' + Date.now(),
+                                    label: 'Nuevo Campo',
+                                    type: 'text',
+                                    pinned: true,
+                                    required: true
+                                  });
+                                  setAdminFormularios({ ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } });
+                                }}
+                                style={{ width: 'fit-content', gap: '0.5rem' }}
+                              >
+                                <Plus size={14} />
+                                Agregar Campo al Formulario
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Guardar / Eliminar / Copiar Formulario */}
+                        <div style={{ display: 'flex', gap: '1rem', borderTop: '1px solid var(--border-light)', paddingTop: '1.25rem', marginTop: '1rem' }}>
+                          {isEditable ? (
+                            <>
+                              <button 
+                                className="btn btn-primary"
+                                onClick={() => saveAdminFormularios(adminFormularios)}
+                              >
+                                Guardar Cambios de Formulario
+                              </button>
+                              
+                              <button 
+                                className="btn btn-secondary"
+                                onClick={() => {
+                                  if (confirm("¿Estás seguro de eliminar todo este formulario?")) {
+                                    const nextForms = [...adminFormularios[selectedAreaEdit].formularios];
+                                    nextForms.splice(activeFormIndexEdit, 1);
+                                    const updated = { ...adminFormularios, [selectedAreaEdit]: { formularios: nextForms } };
+                                    setAdminFormularios(updated);
+                                    saveAdminFormularios(updated);
+                                    setActiveFormIndexEdit(null);
+                                  }
+                                }}
+                                style={{ color: 'var(--danger)', borderColor: 'rgba(255, 75, 75, 0.2)' }}
+                              >
+                                Eliminar Formulario
+                              </button>
+                            </>
+                          ) : (
+                            adminRole === 'jefe' && adminArea && (
+                              <button 
+                                className="btn btn-primary"
+                                onClick={() => {
+                                  const formToCopy = adminFormularios[selectedAreaEdit].formularios[activeFormIndexEdit];
+                                  const copiedForm = {
+                                    ...JSON.parse(JSON.stringify(formToCopy)),
+                                    id: 'form_' + adminArea.toLowerCase() + '_' + Date.now(),
+                                    titulo: formToCopy.titulo + ' (Copia)',
+                                    fields: formToCopy.fields || []
+                                  };
+                                  const myAreaForms = adminFormularios[adminArea]?.formularios || [];
+                                  const updated = {
+                                    ...adminFormularios,
+                                    [adminArea]: {
+                                      formularios: [...myAreaForms, copiedForm]
+                                    }
+                                  };
+                                  setAdminFormularios(updated);
+                                  saveAdminFormularios(updated);
+                                  showAdminToast(`Formulario copiado con éxito a tu área (${adminArea})`);
+                                  setSelectedAreaEdit(adminArea);
+                                  setActiveFormIndexEdit(myAreaForms.length);
+                                }}
+                              >
+                                Copiar Formulario a mi Área ({adminArea})
+                              </button>
+                            )
+                          )}
+                        </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: PERMISOS DE FORMULARIOS */}
+              {adminActiveTab === 'permisos' && (
+                <div className="glass-panel" style={{ padding: '2.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', marginBottom: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
+                    <h3 style={{ fontSize: '1.2rem', fontWeight: 600, margin: 0 }}>
+                      Permisos y Áreas de Trabajo por Operario
+                    </h3>
+                    <input
+                      type="text"
+                      className="select-control"
+                      placeholder="🔍 Buscar operario..."
+                      value={permisosSearchQuery}
+                      onChange={(e) => setPermisosSearchQuery(e.target.value)}
+                      style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem', background: 'var(--bg-input)', width: '220px', flexShrink: 0 }}
+                    />
+                  </div>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '2rem' }}>
+                    Asigna a qué áreas pertenece cada operario y selecciona individualmente qué formularios tiene permitidos en cada área. Un operario puede pertenecer a varias áreas simultáneamente. El usuario 'admin' tiene permisos generales sobre todas las áreas.
+                  </p>
+
+                  {(() => {
+                    const curJefeInfo = adminUsers[loggedAdminUser?.toLowerCase()];
+                    // Áreas que el jefe puede gestionar
+                    const jefeAreas = adminRole === 'admin'
+                      ? adminAreasList
+                      : (() => {
+                          const areas = curJefeInfo?.areas_acceso && curJefeInfo.areas_acceso.length > 0
+                            ? curJefeInfo.areas_acceso
+                            : [adminArea || curJefeInfo?.area].filter(Boolean);
+                          return areas;
+                        })();
+
+                    const allOperarios = Object.entries(adminUsers).filter(([uname, uinfo]) => {
+                      if (uname === 'admin') return adminRole === 'admin';
+                      if (uinfo.role === 'admin' || uinfo.role === 'jefe') return adminRole === 'admin';
+                      if (adminRole === 'admin') return true;
+                      // Jefes ven operarios que tienen al menos un área en común
+                      const opAreas = Array.isArray(uinfo.areas_acceso_operario)
+                        ? uinfo.areas_acceso_operario
+                        : (uinfo.area ? [uinfo.area] : []);
+                      return opAreas.some(a => jefeAreas.includes(a));
+                    });
+
+                    // Filtro de búsqueda
+                    const operarios = permisosSearchQuery.trim()
+                      ? allOperarios.filter(([uname]) => uname.toLowerCase().includes(permisosSearchQuery.trim().toLowerCase()))
+                      : allOperarios;
+
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                        {operarios.length === 0 && (
+                          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                            {permisosSearchQuery ? `No se encontraron operarios con "${permisosSearchQuery}".` : 'No hay operarios visibles para tu perfil.'}
+                          </p>
+                        )}
+                        {operarios.map(([uname, uinfo]) => {
+                          if (uname === 'admin') {
+                            return (
+                              <div key={uname} style={{ padding: '1.25rem', background: 'var(--bg-card)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)' }}>
+                                <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--accent)', marginBottom: '0.35rem' }}>{uname}</div>
+                                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Administrador General — Acceso a todos los formularios de todas las áreas.</span>
+                              </div>
+                            );
+                          }
+
+                          // Áreas actuales del operario (migrar de uinfo.area si existe)
+                          const opCurrentAreas = Array.isArray(uinfo.areas_acceso_operario)
+                            ? uinfo.areas_acceso_operario
+                            : (uinfo.area ? [uinfo.area] : []);
+
+                          // formularios_permitidos ahora es { "Cosecha": { "form_id": true/false }, ... }
+                          // pero también puede ser el formato viejo { "form_id": true/false }
+                          const rawPermisos = uinfo.formularios_permitidos || {};
+                          // Detectar si es formato viejo (valores son bool) o nuevo (valores son objetos)
+                          const isOldFormat = Object.values(rawPermisos).some(v => typeof v === 'boolean');
+                          const permisosPorArea = isOldFormat
+                            ? (uinfo.area ? { [uinfo.area]: rawPermisos } : {})
+                            : rawPermisos;
+
+                          const saveOperarioPermissions = (nextAreas, nextPermisosPorArea) => {
+                            const nextUser = {
+                              ...uinfo,
+                              areas_acceso_operario: nextAreas,
+                              area: nextAreas[0] || uinfo.area || '', // compat legacy
+                              formularios_permitidos: nextPermisosPorArea
+                            };
+                            const nextUsers = { ...adminUsers, [uname]: nextUser };
+                            setAdminUsers(nextUsers);
+                            saveAdminUsers(nextUsers);
+                          };
+
+                          return (
+                            <div key={uname} style={{ padding: '1.5rem', background: 'var(--bg-card)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)' }}>
+                              {/* Header operario */}
+                              <div style={{ fontWeight: 700, fontSize: '1rem', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-light)' }}>
+                                👤 {uname}
+                                {uinfo.fincas?.length > 0 && (
+                                  <span style={{ marginLeft: '0.75rem', fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>
+                                    Finca(s): {uinfo.fincas.join(', ')}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Áreas asignadas al operario */}
+                              <div style={{ marginBottom: '1rem' }}>
+                                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '0.5rem' }}>
+                                  Áreas Asignadas
+                                </label>
+                                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                  {jefeAreas.map(area => {
+                                    const isChecked = opCurrentAreas.includes(area);
+                                    return (
+                                      <label key={area} style={{
+                                        display: 'flex', alignItems: 'center', gap: '0.4rem',
+                                        padding: '0.35rem 0.75rem',
+                                        borderRadius: 'var(--radius-sm)',
+                                        background: isChecked ? 'rgba(var(--accent-rgb, 56,189,248), 0.15)' : 'var(--bg-input)',
+                                        border: `1px solid ${isChecked ? 'var(--accent)' : 'var(--border-light)'}`,
+                                        cursor: 'pointer', fontSize: '0.85rem',
+                                        color: isChecked ? 'var(--accent)' : 'var(--text-muted)',
+                                        transition: 'all 0.15s ease'
+                                      }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={isChecked}
+                                          style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
+                                          onChange={() => {
+                                            let nextAreas;
+                                            let nextPermisos = { ...permisosPorArea };
+                                            if (isChecked) {
+                                              nextAreas = opCurrentAreas.filter(a => a !== area);
+                                              delete nextPermisos[area];
+                                            } else {
+                                              nextAreas = [...opCurrentAreas, area];
+                                              // Inicializar todos los formularios del área como permitidos
+                                              const formsInArea = adminFormularios[area]?.formularios || [];
+                                              nextPermisos[area] = {};
+                                              formsInArea.forEach(f => { nextPermisos[area][f.id] = true; });
+                                            }
+                                            saveOperarioPermissions(nextAreas, nextPermisos);
+                                          }}
+                                        />
+                                        {area}
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              {/* Formularios permitidos por área */}
+                              {opCurrentAreas.filter(a => jefeAreas.includes(a)).length > 0 && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.75rem' }}>
+                                  <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                    Formularios Permitidos por Área
+                                  </label>
+                                  {opCurrentAreas.filter(a => jefeAreas.includes(a)).map(area => {
+                                    const formsInArea = adminFormularios[area]?.formularios || [];
+                                    const areaPermisos = permisosPorArea[area] || {};
+                                    return (
+                                      <div key={area} style={{ padding: '0.75rem 1rem', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)' }}>
+                                        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent)', marginBottom: '0.5rem' }}>
+                                          📋 {area}
+                                        </div>
+                                        {formsInArea.length === 0 ? (
+                                          <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>No hay formularios creados en esta área.</span>
+                                        ) : (
+                                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                            {formsInArea.map(f => {
+                                              const isChecked = areaPermisos[f.id] !== false;
+                                              return (
+                                                <label key={f.id} style={{
+                                                  display: 'flex', alignItems: 'center', gap: '0.4rem',
+                                                  padding: '0.3rem 0.65rem',
+                                                  borderRadius: 'var(--radius-sm)',
+                                                  background: isChecked ? 'rgba(var(--accent-rgb, 56,189,248), 0.1)' : 'transparent',
+                                                  border: `1px solid ${isChecked ? 'rgba(var(--accent-rgb, 56,189,248), 0.4)' : 'var(--border-light)'}`,
+                                                  cursor: 'pointer', fontSize: '0.82rem',
+                                                  color: isChecked ? 'var(--text-main)' : 'var(--text-muted)',
+                                                  transition: 'all 0.15s ease'
+                                                }}>
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={isChecked}
+                                                    style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
+                                                    onChange={(e) => {
+                                                      const nextPermisos = {
+                                                        ...permisosPorArea,
+                                                        [area]: { ...areaPermisos, [f.id]: e.target.checked }
+                                                      };
+                                                      saveOperarioPermissions(opCurrentAreas, nextPermisos);
+                                                    }}
+                                                  />
+                                                  {f.titulo}
+                                                </label>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+
+              {/* TAB 4: GESTION DE AREAS (Solo Admin) */}
+              {adminActiveTab === 'areas' && adminRole === 'admin' && (
+                <div className="glass-panel" style={{ padding: '2.5rem', maxWidth: '600px', width: '100%' }}>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Plus size={20} className="text-accent" />
+                    Gestión de Áreas de Trabajo
+                  </h3>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '2rem' }}>
+                    Como Administrador General, aquí puedes crear nuevas áreas de trabajo (ej: Riego, Sanidad) o eliminar áreas existentes. Esto afectará a todos los dropdowns de formularios y operarios en tiempo real.
+                  </p>
+
+                  {/* Crear nueva área */}
+                  <form onSubmit={async (e) => {
+                    e.preventDefault();
+                    const newAreaNameText = e.target.newAreaNameInput.value.trim();
+                    if (!newAreaNameText) return;
+                    if (adminAreasList.some(a => a.toLowerCase() === newAreaNameText.toLowerCase())) {
+                      showAdminToast("Esta área ya existe.", "error");
+                      return;
+                    }
+                    const updatedAreas = [...adminAreasList, newAreaNameText];
+                    try {
+                      const res = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/areas.json', {
+                        method: 'PUT',
+                        body: JSON.stringify(updatedAreas)
+                      });
+                      if (res.ok) {
+                        setAdminAreasList(updatedAreas);
+                        e.target.newAreaNameInput.value = '';
+                        showAdminToast("Área creada con éxito.");
+                      }
+                    } catch (err) {
+                      console.error("Error al crear área:", err);
+                      showAdminToast("Error de conexión al crear área.", "error");
+                    }
+                  }} style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
+                    <input 
+                      name="newAreaNameInput"
+                      type="text"
+                      required
+                      placeholder="Nombre de la nueva área..."
+                      className="select-control"
+                      style={{ padding: '0.5rem 0.75rem', flex: 1 }}
+                    />
+                    <button type="submit" className="btn btn-primary">
+                      Crear Área
+                    </button>
+                  </form>
+
+                  {/* Listado de áreas */}
+                  <h4 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.5rem' }}>
+                    Áreas de Trabajo Activas
+                  </h4>
+                  <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid var(--border-light)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                          <th style={{ padding: '0.75rem' }}>Nombre del Área</th>
+                          <th style={{ padding: '0.75rem', textAlign: 'right' }}>Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {adminAreasList.map(areaItem => (
+                          <tr key={areaItem} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                            <td style={{ padding: '0.75rem', fontWeight: 600 }}>{areaItem}</td>
+                            <td style={{ padding: '0.75rem', textAlign: 'right' }}>
+                              <button
+                                type="button"
+                                className="btn btn-secondary"
+                                onClick={async () => {
+                                  if (confirm(`¿Estás seguro de eliminar el área "${areaItem}"? Esto no borrará los formularios existentes pero los dejará sin área asignada.`)) {
+                                    const updatedAreas = adminAreasList.filter(a => a !== areaItem);
+                                    try {
+                                      const res = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/areas.json', {
+                                        method: 'PUT',
+                                        body: JSON.stringify(updatedAreas)
+                                      });
+                                      if (res.ok) {
+                                        setAdminAreasList(updatedAreas);
+                                        showAdminToast("Área eliminada con éxito.");
+                                      }
+                                    } catch (err) {
+                                      console.error("Error al eliminar área:", err);
+                                      showAdminToast("Error de conexión al eliminar área.", "error");
+                                    }
+                                  }
+                                }}
+                                style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', color: 'var(--danger)', borderColor: 'rgba(255,75,75,0.2)' }}
+                              >
+                                Eliminar
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════
+           MODAL DE PERMISOS (FINCAS + ÁREAS DE ACCESO)
+          ══════════════════════════════════════════ */}
+      {permisosModalUser && (() => {
+        const FINCAS_SISTEMA = ['HLG', 'HSL', 'TUC'];
+        const uinfo = adminUsers[permisosModalUser] || {};
+        const isJefe = uinfo.role === 'jefe';
+
+        const toggleFinca = (f) => {
+          setPermisosTemp(prev => {
+            const next = prev.fincas.includes(f)
+              ? prev.fincas.filter(x => x !== f)
+              : [...prev.fincas, f];
+            return { ...prev, fincas: next };
+          });
+        };
+
+        const toggleArea = (a) => {
+          setPermisosTemp(prev => {
+            const next = prev.areas_acceso.includes(a)
+              ? prev.areas_acceso.filter(x => x !== a)
+              : [...prev.areas_acceso, a];
+            return { ...prev, areas_acceso: next };
+          });
+        };
+
+        const guardarPermisos = () => {
+          const updated = {
+            ...adminUsers,
+            [permisosModalUser]: {
+              ...uinfo,
+              fincas: permisosTemp.fincas,
+              ...(isJefe ? { areas_acceso: permisosTemp.areas_acceso } : {})
+            }
+          };
+          setAdminUsers(updated);
+          saveAdminUsers(updated);
+          showAdminToast('Permisos guardados con éxito.');
+          setPermisosModalUser(null);
+        };
+
+        return (
+          <div
+            className="modal-overlay"
+            style={{ zIndex: 100002 }}
+            onClick={() => setPermisosModalUser(null)}
+          >
+            <div
+              className="modal-content glass-panel"
+              style={{ maxWidth: '480px', width: '95%' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="modal-header" style={{ marginBottom: '1.5rem' }}>
+                <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#a78bfa' }}>
+                  🔑 Permisos — <span style={{ color: 'var(--text-main)', fontWeight: 700 }}>{permisosModalUser}</span>
+                </h3>
+                <p style={{ margin: '0.4rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  {isJefe
+                    ? 'Define en qué fincas puede operar y qué áreas puede gestionar este jefe.'
+                    : 'Define en qué finca(s) opera este operario. Si solo tiene una, la finca quedará embebida automáticamente en sus formularios de campo.'}
+                </p>
+              </div>
+
+              {/* Sección A: Fincas */}
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                  Fincas Permitidas
+                </label>
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  {FINCAS_SISTEMA.map(f => {
+                    const checked = permisosTemp.fincas.includes(f);
+                    return (
+                      <label
+                        key={f}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '0.5rem',
+                          padding: '0.5rem 1rem',
+                          border: checked ? '1px solid #a78bfa' : '1px solid var(--border-light)',
+                          borderRadius: 'var(--radius-sm)',
+                          background: checked ? 'rgba(167,139,250,0.12)' : 'rgba(255,255,255,0.03)',
+                          cursor: 'pointer',
+                          fontSize: '0.9rem', fontWeight: 600,
+                          color: checked ? '#a78bfa' : 'var(--text-muted)',
+                          transition: 'all 0.2s ease',
+                          userSelect: 'none'
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleFinca(f)}
+                          style={{ cursor: 'pointer', accentColor: '#a78bfa' }}
+                        />
+                        {f}
+                      </label>
+                    );
+                  })}
+                </div>
+                {permisosTemp.fincas.length === 1 && (
+                  <p style={{ fontSize: '0.72rem', color: '#a78bfa', marginTop: '0.5rem', opacity: 0.8 }}>
+                    ✓ El operario solo trabaja en <strong>{permisosTemp.fincas[0]}</strong> — la finca se embebe automáticamente en sus formularios.
+                  </p>
+                )}
+                {permisosTemp.fincas.length > 1 && (
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+                    El operario trabaja en múltiples fincas — el formulario mostrará un campo para seleccionar la finca activa.
+                  </p>
+                )}
+              </div>
+
+              {/* Sección B: Áreas de Acceso (solo jefes) */}
+              {isJefe && (
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    Áreas que puede gestionar (crear operarios y formularios)
+                  </label>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    {adminAreasList.map(a => {
+                      const checked = permisosTemp.areas_acceso.includes(a);
+                      return (
+                        <label
+                          key={a}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '0.4rem',
+                            padding: '0.4rem 0.75rem',
+                            border: checked ? '1px solid #00f2fe' : '1px solid var(--border-light)',
+                            borderRadius: 'var(--radius-sm)',
+                            background: checked ? 'rgba(0,242,254,0.08)' : 'rgba(255,255,255,0.02)',
+                            cursor: 'pointer',
+                            fontSize: '0.82rem', fontWeight: checked ? 600 : 400,
+                            color: checked ? '#00f2fe' : 'var(--text-muted)',
+                            transition: 'all 0.2s ease',
+                            userSelect: 'none'
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleArea(a)}
+                            style={{ cursor: 'pointer', accentColor: '#00f2fe' }}
+                          />
+                          {a}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+                    Si no se selecciona ninguna, el jefe solo gestiona su área principal: <strong>{uinfo.area}</strong>
+                  </p>
+                </div>
+              )}
+
+              {/* Botones */}
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', borderTop: '1px solid var(--border-light)', paddingTop: '1rem' }}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setPermisosModalUser(null)}
+                  style={{ padding: '0.5rem 1.25rem' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={guardarPermisos}
+                  style={{ padding: '0.5rem 1.5rem', background: 'linear-gradient(135deg, #7c3aed, #a78bfa)', borderColor: '#a78bfa' }}
+                >
+                  💾 Guardar Permisos
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Modal de Confirmación de Eliminación Total */}
+      {userToDeleteTotal && (
+        <div className="modal-overlay" style={{ zIndex: 100001 }} onClick={() => setUserToDeleteTotal(null)}>
+          <div className="modal-content glass-panel" style={{ maxWidth: '400px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 style={{ color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+                <AlertTriangle size={18} />
+                Confirmación de Seguridad
+              </h3>
+              <button className="modal-close-btn" onClick={() => setUserToDeleteTotal(null)}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <p style={{ color: 'var(--text-main)', fontSize: '0.9rem', margin: 0 }}>
+                ¿Estás seguro de eliminar permanentemente al usuario <strong>{userToDeleteTotal}</strong> y todos sus datos del servidor de inmediato? Esta acción es irreversible.
+              </p>
+              <div className="filter-group" style={{ margin: 0 }}>
+                <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Escribe exactamente <strong>{userToDeleteTotal}</strong> para confirmar:
+                </label>
+                <input 
+                  type="text"
+                  className="select-control"
+                  value={deleteTotalConfirmInput}
+                  onChange={(e) => setDeleteTotalConfirmInput(e.target.value)}
+                  placeholder={userToDeleteTotal}
+                  style={{ padding: '0.5rem 0.75rem', marginTop: '0.5rem', width: '100%', background: 'var(--bg-input)', color: '#fff' }}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setUserToDeleteTotal(null)}
+                  style={{ flex: 1 }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="btn btn-primary"
+                  disabled={deleteTotalConfirmInput !== userToDeleteTotal}
+                  onClick={async () => {
+                    const next = { ...adminUsers };
+                    delete next[userToDeleteTotal];
+                    try {
+                      const res = await fetch('https://balance-hidrico-ghlg-default-rtdb.firebaseio.com/registros/usuarios.json', {
+                        method: 'PUT',
+                        body: JSON.stringify(next)
+                      });
+                      if (res.ok) {
+                        setAdminUsers(next);
+                        showAdminToast("Usuario eliminado definitivamente del servidor.");
+                        setUserToDeleteTotal(null);
+                      }
+                    } catch (e) {
+                      console.error("Error al eliminar permanentemente:", e);
+                      showAdminToast("Error al conectar con la base de datos.", "error");
+                    }
+                  }}
+                  style={{ 
+                    flex: 1, 
+                    background: deleteTotalConfirmInput === userToDeleteTotal ? 'var(--danger)' : 'rgba(255,75,75,0.1)',
+                    borderColor: deleteTotalConfirmInput === userToDeleteTotal ? 'var(--danger)' : 'rgba(255,75,75,0.1)',
+                    color: deleteTotalConfirmInput === userToDeleteTotal ? '#fff' : 'var(--text-muted)',
+                    opacity: deleteTotalConfirmInput === userToDeleteTotal ? 1 : 0.4
+                  }}
+                >
+                  Eliminar Todo
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Flotante de Administración */}
+      {adminToast && (
+        <div style={{
+          position: 'fixed',
+          bottom: '2rem',
+          right: '2rem',
+          zIndex: 100000,
+          background: adminToast.type === 'error' ? 'rgba(255, 75, 75, 0.95)' : 'rgba(0, 242, 254, 0.95)',
+          color: '#051829',
+          padding: '0.85rem 1.5rem',
+          borderRadius: '8px',
+          fontWeight: 'bold',
+          fontSize: '0.95rem',
+          boxShadow: '0 8px 32px rgba(0, 242, 254, 0.25)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          transition: 'all 0.3s ease-in-out'
+        }}>
+          {adminToast.type === 'error' ? '⚠️' : '✓'} {adminToast.message}
+        </div>
+      )}
+
 
       {/* Modal de Login de Administrador */}
       {showLoginModal && (
