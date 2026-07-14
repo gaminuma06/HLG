@@ -819,6 +819,7 @@ function App() {
     canales: false,
     pluviometros: false
   });
+  const [palmasMenuOpen, setPalmasMenuOpen] = useState(false);
 
   const canJefeManageUser = (jefeUname, operarioUinfo) => {
     if (adminRole === 'admin') return true;
@@ -5770,6 +5771,174 @@ function App() {
                           { key: 'pluviometros', label: 'Pluviómetros' }
                         ].map((filter) => {
                           const checked = mapFilters[filter.key];
+                          
+                          if (filter.key === 'palmas') {
+                            return (
+                              <div key={filter.key} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', position: 'relative' }}>
+                                <label
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.25rem',
+                                    fontSize: '0.72rem',
+                                    cursor: 'pointer',
+                                    color: checked ? 'var(--accent)' : 'rgba(255, 255, 255, 0.4)',
+                                    opacity: checked ? 0.9 : 0.45,
+                                    userSelect: 'none',
+                                    transition: 'all 0.2s ease',
+                                    margin: 0
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => {
+                                      const newVal = !checked;
+                                      setMapFilters(prev => ({
+                                        ...prev,
+                                        palmas: newVal
+                                      }));
+                                      if (!newVal) {
+                                        setPalmasMenuOpen(false);
+                                      }
+                                    }}
+                                    style={{
+                                      accentColor: 'var(--accent)',
+                                      cursor: 'pointer',
+                                      width: '10px',
+                                      height: '10px',
+                                      margin: 0,
+                                      opacity: checked ? 0.9 : 0.5
+                                    }}
+                                  />
+                                  <span>{filter.label}</span>
+                                </label>
+
+                                <span style={{ color: 'rgba(255, 255, 255, 0.25)', fontSize: '0.72rem', userSelect: 'none' }}>-</span>
+                                <span style={{ 
+                                  color: checked ? 'var(--accent)' : 'rgba(255, 255, 255, 0.25)', 
+                                  fontSize: '0.72rem', 
+                                  fontWeight: '600',
+                                  opacity: checked ? 1 : 0.4,
+                                  userSelect: 'none'
+                                }}>
+                                  Z
+                                </span>
+
+                                <button
+                                  type="button"
+                                  disabled={!checked}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPalmasMenuOpen(!palmasMenuOpen);
+                                  }}
+                                  style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    padding: '0 2px',
+                                    color: !checked 
+                                      ? 'rgba(255, 255, 255, 0.2)' 
+                                      : palmasMenuOpen 
+                                        ? '#00f2fe' 
+                                        : 'rgba(255, 255, 255, 0.6)',
+                                    cursor: checked ? 'pointer' : 'not-allowed',
+                                    fontSize: '0.8rem',
+                                    lineHeight: 1,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    transition: 'color 0.2s ease',
+                                    outline: 'none'
+                                  }}
+                                  title={checked ? "Seleccionar Lote para Palmas" : "Active 'Palmas' para usar esta opción"}
+                                >
+                                  ●
+                                </button>
+
+                                {checked && palmasMenuOpen && (
+                                  <div style={{
+                                    position: 'absolute',
+                                    top: '100%',
+                                    left: '0',
+                                    zIndex: 10000,
+                                    marginTop: '0.35rem',
+                                    width: '150px',
+                                    maxHeight: '180px',
+                                    overflowY: 'auto',
+                                    background: 'rgba(15, 23, 42, 0.95)',
+                                    backdropFilter: 'blur(8px)',
+                                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                                    borderRadius: 'var(--radius-sm)',
+                                    boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                                    padding: '0.25rem 0'
+                                  }}>
+                                    {activeMapGeoJSON?.features && activeMapGeoJSON.features.length > 0 ? (
+                                      [...activeMapGeoJSON.features]
+                                        .map((f, fidx) => {
+                                          const name = f.properties.NOMBRELOTE || f.properties.nombrelote || f.properties['NOMBRE LOT'] || f.properties.lote || f.properties.LOTE || f.properties.name || f.properties.id || '';
+                                          return { feature: f, name, id: f.id || fidx };
+                                        })
+                                        .filter(item => item.name)
+                                        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+                                        .map((item) => {
+                                          const selectedName = selectedLotInfo?.properties?.NOMBRELOTE || selectedLotInfo?.properties?.nombrelote || selectedLotInfo?.properties?.['NOMBRE LOT'] || selectedLotInfo?.properties?.lote || selectedLotInfo?.properties?.LOTE || selectedLotInfo?.properties?.name || selectedLotInfo?.properties?.id || '';
+                                          const isSelected = selectedName === item.name;
+                                          return (
+                                            <button
+                                              key={item.id}
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                const prec = getPrecipitationForFeature(item.feature);
+                                                setSelectedLotInfo({
+                                                  ...item.feature,
+                                                  precipitation: prec
+                                                });
+                                                setPalmasMenuOpen(false);
+                                              }}
+                                              style={{
+                                                display: 'block',
+                                                width: '100%',
+                                                textAlign: 'left',
+                                                background: isSelected ? 'rgba(0, 242, 254, 0.12)' : 'transparent',
+                                                border: 'none',
+                                                color: isSelected ? '#00f2fe' : 'rgba(255, 255, 255, 0.75)',
+                                                padding: '0.35rem 0.6rem',
+                                                fontSize: '0.72rem',
+                                                cursor: 'pointer',
+                                                whiteSpace: 'nowrap',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                transition: 'all 0.15s ease'
+                                              }}
+                                              onMouseEnter={(e) => {
+                                                if (!isSelected) {
+                                                  e.target.style.background = 'rgba(255, 255, 255, 0.05)';
+                                                  e.target.style.color = '#fff';
+                                                }
+                                              }}
+                                              onMouseLeave={(e) => {
+                                                if (!isSelected) {
+                                                  e.target.style.background = 'transparent';
+                                                  e.target.style.color = 'rgba(255, 255, 255, 0.75)';
+                                                }
+                                              }}
+                                            >
+                                              {item.name}
+                                            </button>
+                                          );
+                                        })
+                                    ) : (
+                                      <div style={{ padding: '0.4rem 0.6rem', fontSize: '0.7rem', color: 'rgba(255, 255, 255, 0.4)' }}>
+                                        Sin lotes
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          }
+
                           return (
                             <label
                               key={filter.key}
