@@ -327,41 +327,51 @@ const getLoteUniqueKey = (properties, index) => {
 };
 
 const MONTH_NAMES_LONG = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
-function FitMapBounds({ geojson, triggerReset }) {
+function MapViewportController({ 
+  selectedLot, 
+  selectedPalmasLot, 
+  mapFilters, 
+  trackActive, 
+  selectedTrackId, 
+  mobileTracks, 
+  mobileReadings,
+  zoomFocusTarget,
+  geojson,
+  triggerReset
+}) {
   const map = useMap();
-  useEffect(() => {
-    if (geojson && map) {
-      // Retraso para esperar que el DOM se organice e invalidar tamaño de mapa
-      const timer = setTimeout(() => {
-        try {
-          map.invalidateSize();
-          const layer = L.geoJSON(geojson);
-          const bounds = layer.getBounds();
-          if (bounds.isValid()) {
-            // Ajustamos con padding mínimo para acercar el zoom lo máximo posible
-            map.fitBounds(bounds, { padding: [5, 5] });
-          }
-        } catch (e) {
-          console.error("Error al enfocar el mapa en los límites del GeoJSON:", e);
-        }
-      }, 150);
-      return () => clearTimeout(timer);
-    }
-  }, [geojson, map, triggerReset]);
-  return null;
-}
-
-function FitSelectedLotBounds({ selectedLot, selectedPalmasLot, mapFilters, trackActive, zoomFocusTarget }) {
-  const map = useMap();
+  
   useEffect(() => {
     if (!map) return;
     
-    // Si la prioridad de foco es para el track, no hacer zoom al lote ni bloquear interacciones
-    if (zoomFocusTarget === 'track') {
+    // 1. Priorizar zoom al track si el foco de zoom es para el track
+    if (zoomFocusTarget === 'track' && trackActive && selectedTrackId) {
+      const track = mobileTracks.find(t => t.id === selectedTrackId);
+      if (track && track.recorrido && track.recorrido.length > 0) {
+        const timer = setTimeout(() => {
+          try {
+            map.invalidateSize();
+            const positions = track.recorrido.map(p => [p.lat, p.lon]);
+            const bounds = L.latLngBounds(positions);
+            if (bounds.isValid()) {
+              const eastWestSpan = Math.abs(bounds.getEast() - bounds.getWest());
+              const northSouthSpan = Math.abs(bounds.getNorth() - bounds.getSouth());
+              if (eastWestSpan < 0.0008 && northSouthSpan < 0.0008) {
+                map.setView(bounds.getCenter(), 15);
+              } else {
+                map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15.5 });
+              }
+            }
+          } catch (e) {
+            console.error("Error al enfocar el mapa en el recorrido GPS:", e);
+          }
+        }, 150);
+        return () => clearTimeout(timer);
+      }
       return;
     }
     
-    // Si Lotes está activo, controla el zoom. Si no, pero Palmas sí está activo, Palmas controla el zoom.
+    // 2. Determinar lote seleccionado activo según prioridad (Lotes > Palmas)
     let activeZoomLot = null;
     if (mapFilters?.lotes) {
       activeZoomLot = selectedLot;
@@ -369,7 +379,8 @@ function FitSelectedLotBounds({ selectedLot, selectedPalmasLot, mapFilters, trac
       activeZoomLot = selectedPalmasLot;
     }
     
-    if (activeZoomLot && !activeZoomLot.isAll) {
+    // 3. Zoom a un lote individual específico (y bloquear interacción)
+    if (activeZoomLot && !activeZoomLot.isAll && zoomFocusTarget === 'lot') {
       try {
         const layer = L.geoJSON(activeZoomLot);
         const bounds = layer.getBounds();
@@ -377,7 +388,7 @@ function FitSelectedLotBounds({ selectedLot, selectedPalmasLot, mapFilters, trac
           const timer = setTimeout(() => {
             map.fitBounds(bounds, { padding: [10, 10], maxZoom: 18 });
             
-            // Bloquear zoom e interacción manual del usuario en el lote
+            // Bloquear interacción del usuario en el lote
             if (map.dragging) map.dragging.disable();
             if (map.doubleClickZoom) map.doubleClickZoom.disable();
             if (map.scrollWheelZoom) map.scrollWheelZoom.disable();
@@ -388,27 +399,57 @@ function FitSelectedLotBounds({ selectedLot, selectedPalmasLot, mapFilters, trac
           return () => clearTimeout(timer);
         }
       } catch (e) {
-        console.error("Error focusing on selected lot:", e);
+        console.error("Error enfocando el lote seleccionado:", e);
       }
     } else {
-      // Si se selecciona Todo (o no hay selección), permitir paneo manual y configurar zoom manual según trackActive
-      if (trackActive) {
-        if (map.dragging) map.dragging.enable();
-        if (map.doubleClickZoom) map.doubleClickZoom.enable();
-        if (map.scrollWheelZoom) map.scrollWheelZoom.enable();
-        if (map.boxZoom) map.boxZoom.enable();
-        if (map.keyboard) map.keyboard.enable();
-        if (map.touchZoom) map.touchZoom.enable();
-      } else {
-        if (map.dragging) map.dragging.enable();
-        if (map.doubleClickZoom) map.doubleClickZoom.disable();
-        if (map.scrollWheelZoom) map.scrollWheelZoom.disable();
-        if (map.boxZoom) map.boxZoom.disable();
-        if (map.keyboard) map.keyboard.disable();
-        if (map.touchZoom) map.touchZoom.disable();
+      // 4. Zoom al mapa completo de la Finca (Todos o ningún lote seleccionado)
+      if (geojson) {
+        const timer = setTimeout(() => {
+          try {
+            map.invalidateSize();
+            const layer = L.geoJSON(geojson);
+            const bounds = layer.getBounds();
+            if (bounds.isValid()) {
+              map.fitBounds(bounds, { padding: [5, 5] });
+            }
+            
+            // Si trackActive es verdadero, permitir todas las interacciones de zoom manual, etc.
+            // Si trackActive es falso, permitir arrastre pero bloquear zoom manual
+            if (trackActive) {
+              if (map.dragging) map.dragging.enable();
+              if (map.doubleClickZoom) map.doubleClickZoom.enable();
+              if (map.scrollWheelZoom) map.scrollWheelZoom.enable();
+              if (map.boxZoom) map.boxZoom.enable();
+              if (map.keyboard) map.keyboard.enable();
+              if (map.touchZoom) map.touchZoom.enable();
+            } else {
+              if (map.dragging) map.dragging.enable();
+              if (map.doubleClickZoom) map.doubleClickZoom.disable();
+              if (map.scrollWheelZoom) map.scrollWheelZoom.disable();
+              if (map.boxZoom) map.boxZoom.disable();
+              if (map.keyboard) map.keyboard.disable();
+              if (map.touchZoom) map.touchZoom.disable();
+            }
+          } catch (e) {
+            console.error("Error enfocando límites del GeoJSON de la Finca:", e);
+          }
+        }, 150);
+        return () => clearTimeout(timer);
       }
     }
-  }, [selectedLot, selectedPalmasLot, mapFilters?.lotes, mapFilters?.palmas, map, trackActive, zoomFocusTarget]);
+  }, [
+    selectedLot, 
+    selectedPalmasLot, 
+    mapFilters?.lotes, 
+    mapFilters?.palmas, 
+    map, 
+    trackActive, 
+    selectedTrackId, 
+    zoomFocusTarget, 
+    geojson,
+    triggerReset
+  ]);
+  
   return null;
 }
 
@@ -541,36 +582,7 @@ function getActiveTrack(selectedTrackId, mobileTracks, mobileReadings) {
   };
 }
 
-function FitTrackBounds({ track }) {
-  const map = useMap();
-  useEffect(() => {
-    if (track && track.recorrido && track.recorrido.length > 0 && map) {
-      const timer = setTimeout(() => {
-        try {
-          map.invalidateSize();
-          const positions = track.recorrido.map(p => [p.lat, p.lon]);
-          const bounds = L.latLngBounds(positions);
-          if (bounds.isValid()) {
-            const eastWestSpan = Math.abs(bounds.getEast() - bounds.getWest());
-            const northSouthSpan = Math.abs(bounds.getNorth() - bounds.getSouth());
-            if (eastWestSpan < 0.0008 && northSouthSpan < 0.0008) {
-              // Si el recorrido tiene muy poca extensión (ej: un solo punto o estacionario),
-              // centramos el mapa en el recorrido y fijamos un zoom moderado (15) para no ir al infinito
-              map.setView(bounds.getCenter(), 15);
-            } else {
-              // Zoom adaptativo ajustado al recorrido completo
-              map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15.5 });
-            }
-          }
-        } catch (e) {
-          console.error("Error al enfocar el mapa en el recorrido GPS:", e);
-        }
-      }, 150);
-      return () => clearTimeout(timer);
-    }
-  }, [track, map]);
-  return null;
-}
+
 
 function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -6727,39 +6739,18 @@ function App() {
                             })}
                             
                             <MapInteractionController active={trackActive} />
-                            {(() => {
-                              let activeZoomLot = null;
-                              if (mapFilters.lotes) {
-                                activeZoomLot = selectedLotInfo;
-                              } else if (mapFilters.palmas) {
-                                activeZoomLot = selectedPalmasLotInfo;
-                              }
-                              const isZoomLotAllOrNull = !activeZoomLot || activeZoomLot.isAll;
-                              
-                              return (
-                                <>
-                                  <FitSelectedLotBounds 
-                                    selectedLot={selectedLotInfo} 
-                                    selectedPalmasLot={selectedPalmasLotInfo} 
-                                    mapFilters={mapFilters} 
-                                    trackActive={trackActive} 
-                                  />
-                                  {(!trackActive || !selectedTrackId) ? (
-                                    isZoomLotAllOrNull && (
-                                      <FitMapBounds 
-                                        geojson={activeMapGeoJSON} 
-                                        triggerReset={`${trackActive}_${selectedTrackId}_${activeZoomLot?.isAll ? 'all' : 'none'}`} 
-                                      />
-                                    )
-                                  ) : (
-                                    (() => {
-                                      const track = getActiveTrack(selectedTrackId, mobileTracks, mobileReadings);
-                                      return <FitTrackBounds track={track} />;
-                                    })()
-                                  )}
-                                </>
-                              );
-                            })()}
+                            <MapViewportController
+                              selectedLot={selectedLotInfo}
+                              selectedPalmasLot={selectedPalmasLotInfo}
+                              mapFilters={mapFilters}
+                              trackActive={trackActive}
+                              selectedTrackId={selectedTrackId}
+                              mobileTracks={mobileTracks}
+                              mobileReadings={mobileReadings}
+                              zoomFocusTarget={zoomFocusTarget}
+                              geojson={activeMapGeoJSON}
+                              triggerReset={`${trackActive}_${selectedTrackId}_${(mapFilters.lotes ? selectedLotInfo : selectedPalmasLotInfo)?.isAll ? 'all' : 'none'}`}
+                            />
 </MapContainer>
                       </div>
 
