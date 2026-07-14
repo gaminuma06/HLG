@@ -859,6 +859,7 @@ function App() {
     pluviometros: false
   });
   const [palmasMenuOpen, setPalmasMenuOpen] = useState(false);
+  const [lotesMenuOpen, setLotesMenuOpen] = useState(false);
 
   const canJefeManageUser = (jefeUname, operarioUinfo) => {
     if (adminRole === 'admin') return true;
@@ -5813,7 +5814,220 @@ function App() {
                         ].map((filter) => {
                           const checked = mapFilters[filter.key];
                           
+                          if (filter.key === 'lotes') {
+                            return (
+                              <div key={filter.key} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', position: 'relative' }}>
+                                <label
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.25rem',
+                                    fontSize: '0.72rem',
+                                    cursor: 'pointer',
+                                    color: checked ? 'var(--accent)' : 'rgba(255, 255, 255, 0.4)',
+                                    opacity: checked ? 0.9 : 0.45,
+                                    userSelect: 'none',
+                                    transition: 'all 0.2s ease',
+                                    margin: 0
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => {
+                                      const newVal = !checked;
+                                      setMapFilters(prev => ({
+                                        ...prev,
+                                        lotes: newVal
+                                      }));
+                                      if (!newVal) {
+                                        setLotesMenuOpen(false);
+                                      } else {
+                                        // Si se activa Lotes, desactivar y cerrar menú de Palmas
+                                        setPalmasMenuOpen(false);
+                                      }
+                                    }}
+                                    style={{
+                                      accentColor: 'var(--accent)',
+                                      cursor: 'pointer',
+                                      width: '10px',
+                                      height: '10px',
+                                      margin: 0,
+                                      opacity: checked ? 0.9 : 0.5
+                                    }}
+                                  />
+                                  <span>{filter.label}</span>
+                                </label>
+
+                                <button
+                                  type="button"
+                                  disabled={!checked}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setLotesMenuOpen(!lotesMenuOpen);
+                                  }}
+                                  style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    padding: '0 4px',
+                                    cursor: checked ? 'pointer' : 'not-allowed',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    transition: 'all 0.2s ease',
+                                    outline: 'none',
+                                    height: '14px',
+                                    alignSelf: 'center'
+                                  }}
+                                  title={checked ? "Seleccionar Lote para Lotes" : "Active 'Lotes' para usar esta opción"}
+                                >
+                                  <span style={{
+                                    width: '6.5px',
+                                    height: '6.5px',
+                                    borderRadius: '50%',
+                                    backgroundColor: !checked ? 'rgba(255, 255, 255, 0.2)' : '#00ff66',
+                                    boxShadow: checked ? '0 0 7px rgba(0, 255, 102, 0.9)' : 'none',
+                                    transition: 'all 0.2s ease',
+                                    display: 'inline-block'
+                                  }} />
+                                </button>
+
+                                {checked && lotesMenuOpen && (
+                                  <div style={{
+                                    position: 'absolute',
+                                    top: '100%',
+                                    left: '0',
+                                    zIndex: 10000,
+                                    marginTop: '0.35rem',
+                                    width: '150px',
+                                    maxHeight: '180px',
+                                    overflowY: 'auto',
+                                    background: 'rgba(15, 23, 42, 0.95)',
+                                    backdropFilter: 'blur(8px)',
+                                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                                    borderRadius: 'var(--radius-sm)',
+                                    boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                                    padding: '0.25rem 0'
+                                  }}>
+                                    {/* Opción "Todos" al principio del listado */}
+                                    {(() => {
+                                      const selectedName = selectedLotInfo?.properties?.NOMBRELOTE || selectedLotInfo?.properties?.nombrelote || selectedLotInfo?.properties?.['NOMBRE LOT'] || selectedLotInfo?.properties?.lote || selectedLotInfo?.properties?.LOTE || selectedLotInfo?.properties?.name || selectedLotInfo?.properties?.id || '';
+                                      const isTodosSelected = selectedName === 'Todos';
+                                      return (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedLotInfo({
+                                              properties: { NOMBRELOTE: 'Todos' },
+                                              isAll: true
+                                            });
+                                            setLotesMenuOpen(false);
+                                          }}
+                                          style={{
+                                            display: 'block',
+                                            width: '100%',
+                                            textAlign: 'left',
+                                            background: isTodosSelected ? 'rgba(0, 242, 254, 0.12)' : 'transparent',
+                                            border: 'none',
+                                            color: isTodosSelected ? '#00f2fe' : 'rgba(255, 255, 255, 0.75)',
+                                            padding: '0.35rem 0.6rem',
+                                            fontSize: '0.72rem',
+                                            fontWeight: '600',
+                                            cursor: 'pointer',
+                                            whiteSpace: 'nowrap',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            transition: 'all 0.15s ease',
+                                            borderBottom: '1px solid rgba(255, 255, 255, 0.04)'
+                                          }}
+                                          onMouseEnter={(e) => {
+                                            if (!isTodosSelected) {
+                                              e.target.style.background = 'rgba(255, 255, 255, 0.05)';
+                                              e.target.style.color = '#fff';
+                                            }
+                                          }}
+                                          onMouseLeave={(e) => {
+                                            if (!isTodosSelected) {
+                                              e.target.style.background = 'transparent';
+                                              e.target.style.color = 'rgba(255, 255, 255, 0.75)';
+                                            }
+                                          }}
+                                        >
+                                          Todos
+                                        </button>
+                                      );
+                                    })()}
+
+                                    {activeMapGeoJSON?.features && activeMapGeoJSON.features.length > 0 ? (
+                                      [...activeMapGeoJSON.features]
+                                        .map((f, fidx) => {
+                                          const name = f.properties.NOMBRELOTE || f.properties.nombrelote || f.properties['NOMBRE LOT'] || f.properties.lote || f.properties.LOTE || f.properties.name || f.properties.id || '';
+                                          return { feature: f, name, id: f.id || fidx };
+                                        })
+                                        .filter(item => item.name)
+                                        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+                                        .map((item) => {
+                                          const selectedName = selectedLotInfo?.properties?.NOMBRELOTE || selectedLotInfo?.properties?.nombrelote || selectedLotInfo?.properties?.['NOMBRE LOT'] || selectedLotInfo?.properties?.lote || selectedLotInfo?.properties?.LOTE || selectedLotInfo?.properties?.name || selectedLotInfo?.properties?.id || '';
+                                          const isSelected = selectedName === item.name;
+                                          return (
+                                            <button
+                                              key={item.id}
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                const prec = getPrecipitationForFeature(item.feature);
+                                                setSelectedLotInfo({
+                                                  ...item.feature,
+                                                  precipitation: prec
+                                                });
+                                                setLotesMenuOpen(false);
+                                              }}
+                                              style={{
+                                                display: 'block',
+                                                width: '100%',
+                                                textAlign: 'left',
+                                                background: isSelected ? 'rgba(0, 242, 254, 0.12)' : 'transparent',
+                                                border: 'none',
+                                                color: isSelected ? '#00f2fe' : 'rgba(255, 255, 255, 0.75)',
+                                                padding: '0.35rem 0.6rem',
+                                                fontSize: '0.72rem',
+                                                cursor: 'pointer',
+                                                whiteSpace: 'nowrap',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                transition: 'all 0.15s ease'
+                                              }}
+                                              onMouseEnter={(e) => {
+                                                if (!isSelected) {
+                                                  e.target.style.background = 'rgba(255, 255, 255, 0.05)';
+                                                  e.target.style.color = '#fff';
+                                                }
+                                              }}
+                                              onMouseLeave={(e) => {
+                                                if (!isSelected) {
+                                                  e.target.style.background = 'transparent';
+                                                  e.target.style.color = 'rgba(255, 255, 255, 0.75)';
+                                                }
+                                              }}
+                                            >
+                                              {item.name}
+                                            </button>
+                                          );
+                                        })
+                                    ) : (
+                                      <div style={{ padding: '0.4rem 0.6rem', fontSize: '0.7rem', color: 'rgba(255, 255, 255, 0.4)' }}>
+                                        Sin lotes
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          }
+
                           if (filter.key === 'palmas') {
+                            const isPalmasBtnDisabled = !checked || mapFilters.lotes;
                             return (
                               <div key={filter.key} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', position: 'relative' }}>
                                 <label
@@ -5857,7 +6071,7 @@ function App() {
 
                                 <button
                                   type="button"
-                                  disabled={!checked}
+                                  disabled={isPalmasBtnDisabled}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setPalmasMenuOpen(!palmasMenuOpen);
@@ -5866,7 +6080,7 @@ function App() {
                                     background: 'transparent',
                                     border: 'none',
                                     padding: '0 4px',
-                                    cursor: checked ? 'pointer' : 'not-allowed',
+                                    cursor: isPalmasBtnDisabled ? 'not-allowed' : 'pointer',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
@@ -5875,20 +6089,26 @@ function App() {
                                     height: '14px',
                                     alignSelf: 'center'
                                   }}
-                                  title={checked ? "Seleccionar Lote para Palmas" : "Active 'Palmas' para usar esta opción"}
+                                  title={
+                                    mapFilters.lotes
+                                      ? "Zoom controlado por Lotes"
+                                      : checked
+                                        ? "Seleccionar Lote para Palmas"
+                                        : "Active 'Palmas' para usar esta opción"
+                                  }
                                 >
                                   <span style={{
                                     width: '6.5px',
                                     height: '6.5px',
                                     borderRadius: '50%',
-                                    backgroundColor: !checked ? 'rgba(255, 255, 255, 0.2)' : '#00ff66',
-                                    boxShadow: checked ? '0 0 7px rgba(0, 255, 102, 0.9)' : 'none',
+                                    backgroundColor: isPalmasBtnDisabled ? 'rgba(255, 255, 255, 0.2)' : '#00ff66',
+                                    boxShadow: !isPalmasBtnDisabled ? '0 0 7px rgba(0, 255, 102, 0.9)' : 'none',
                                     transition: 'all 0.2s ease',
                                     display: 'inline-block'
                                   }} />
                                 </button>
 
-                                {checked && palmasMenuOpen && (
+                                {!isPalmasBtnDisabled && palmasMenuOpen && (
                                   <div style={{
                                     position: 'absolute',
                                     top: '100%',
