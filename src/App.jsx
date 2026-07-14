@@ -5837,23 +5837,27 @@ function App() {
                                   style={{
                                     background: 'transparent',
                                     border: 'none',
-                                    padding: '0 2px',
-                                    color: !checked 
-                                      ? 'rgba(255, 255, 255, 0.2)' 
-                                      : '#00ff66',
-                                    textShadow: checked ? '0 0 6px rgba(0, 255, 102, 0.8)' : 'none',
+                                    padding: '0 4px',
                                     cursor: checked ? 'pointer' : 'not-allowed',
-                                    fontSize: '1.25rem',
-                                    lineHeight: 1,
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
                                     transition: 'all 0.2s ease',
-                                    outline: 'none'
+                                    outline: 'none',
+                                    height: '14px',
+                                    alignSelf: 'center'
                                   }}
                                   title={checked ? "Seleccionar Lote para Palmas" : "Active 'Palmas' para usar esta opción"}
                                 >
-                                  ●
+                                  <span style={{
+                                    width: '6.5px',
+                                    height: '6.5px',
+                                    borderRadius: '50%',
+                                    backgroundColor: !checked ? 'rgba(255, 255, 255, 0.2)' : '#00ff66',
+                                    boxShadow: checked ? '0 0 7px rgba(0, 255, 102, 0.9)' : 'none',
+                                    transition: 'all 0.2s ease',
+                                    display: 'inline-block'
+                                  }} />
                                 </button>
 
                                 {checked && palmasMenuOpen && (
