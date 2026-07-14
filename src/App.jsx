@@ -1475,16 +1475,40 @@ function App() {
 
     // Obtener la instancia de Chart.js
     const chartInstance = chartWrapper.chart || chartWrapper;
-    let url = '';
+    const canvas = chartInstance.canvas || chartWrapper.canvas || (chartWrapper.ctx && chartWrapper.ctx.canvas);
 
+    if (canvas && typeof canvas.toDataURL === 'function') {
+      try {
+        // Crear un canvas temporal para dibujar el fondo sólido
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = canvas.width;
+        tempCanvas.height = canvas.height;
+        const tempCtx = tempCanvas.getContext('2d');
+
+        if (tempCtx) {
+          // Dibujar el fondo oscuro sólido (#0b0f19) que tiene el dashboard
+          tempCtx.fillStyle = '#0b0f19';
+          tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+
+          // Dibujar el canvas original del gráfico sobre el fondo oscuro
+          tempCtx.drawImage(canvas, 0, 0);
+
+          const url = tempCanvas.toDataURL('image/png');
+          const cleanName = `${sanitizeFileName(defaultTitle)}.png`;
+          downloadBase64File(url, cleanName);
+          return;
+        }
+      } catch (e) {
+        console.error("Error al procesar el canvas con fondo sólido:", e);
+      }
+    }
+
+    // Fallback original si algo falla
+    let url = '';
     if (chartInstance && typeof chartInstance.toBase64Image === 'function') {
       url = chartInstance.toBase64Image();
-    } else {
-      // Búsqueda de fallback al elemento canvas directamente
-      const canvas = chartWrapper.canvas || (chartWrapper.ctx && chartWrapper.ctx.canvas);
-      if (canvas && typeof canvas.toDataURL === 'function') {
-        url = canvas.toDataURL('image/png');
-      }
+    } else if (canvas && typeof canvas.toDataURL === 'function') {
+      url = canvas.toDataURL('image/png');
     }
 
     if (url) {
