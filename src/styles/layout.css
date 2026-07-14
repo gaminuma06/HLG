@@ -1417,9 +1417,9 @@
   box-shadow: none !important;
   color: rgba(255, 255, 255, 0.42) !important;
   font-family: var(--font-sans) !important;
-  font-size: 0.6rem !important;
+  font-size: 0.42rem !important;
   font-weight: 500 !important;
-  text-shadow: 0 0 2px #000, 0 0 4px #000 !important;
+  text-shadow: 0 0 1px #000, 0 0 2px #000 !important;
   padding: 0 !important;
   margin: 0 !important;
   text-align: center !important;

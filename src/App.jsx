@@ -958,38 +958,59 @@ function App() {
   const getFeatureCentroid = (feature) => {
     if (!feature || !feature.geometry) return null;
     const geom = feature.geometry;
-    let lats = [];
-    let lons = [];
 
-    const processRing = (ring) => {
-      if (Array.isArray(ring)) {
-        ring.forEach(pt => {
-          if (Array.isArray(pt) && pt.length >= 2) {
-            lons.push(pt[0]);
-            lats.push(pt[1]);
-          }
-        });
+    const getRingCentroid = (ring) => {
+      if (!Array.isArray(ring) || ring.length < 3) return null;
+      let area = 0;
+      let cx = 0;
+      let cy = 0;
+      const n = ring.length;
+      
+      for (let i = 0; i < n - 1; i++) {
+        const p1 = ring[i]; // [longitude, latitude]
+        const p2 = ring[i+1];
+        
+        const factor = p1[0] * p2[1] - p2[0] * p1[1];
+        area += factor;
+        cx += (p1[0] + p2[0]) * factor;
+        cy += (p1[1] + p2[1]) * factor;
       }
+      
+      area = area / 2;
+      if (Math.abs(area) < 1e-12) {
+        // Fallback: simple average
+        let sumX = 0, sumY = 0;
+        ring.forEach(p => {
+          sumX += p[0];
+          sumY += p[1];
+        });
+        return [sumY / n, sumX / n];
+      }
+      
+      cx = cx / (6 * area);
+      cy = cy / (6 * area);
+      
+      return [cy, cx]; // [latitude, longitude]
     };
 
     if (geom.type === 'Polygon') {
       if (geom.coordinates && geom.coordinates[0]) {
-        processRing(geom.coordinates[0]);
+        return getRingCentroid(geom.coordinates[0]);
       }
     } else if (geom.type === 'MultiPolygon') {
       if (geom.coordinates) {
+        let maxArea = -1;
+        let bestCentroid = null;
         geom.coordinates.forEach(poly => {
           if (poly && poly[0]) {
-            processRing(poly[0]);
+            const centroid = getRingCentroid(poly[0]);
+            if (centroid) {
+              bestCentroid = centroid;
+            }
           }
         });
+        return bestCentroid;
       }
-    }
-
-    if (lats.length > 0 && lons.length > 0) {
-      const avgLat = lats.reduce((sum, val) => sum + val, 0) / lats.length;
-      const avgLon = lons.reduce((sum, val) => sum + val, 0) / lons.length;
-      return [avgLat, avgLon];
     }
     return null;
   };
